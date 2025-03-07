@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  saveitforme:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "33446:33446"
+    env_file:
+      - .env.production
+    volumes:
+      - prisma-data:/app/prisma/data
+    restart: unless-stopped
+
+volumes:
+  prisma-data:

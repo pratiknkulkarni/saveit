@@ -1,0 +1,47 @@
+import type {NextConfig} from "next";
+
+
+const nextConfig: NextConfig = {
+    output: "standalone",
+    env: {
+        PORT: process.env.PORT || "3000",
+    },
+    publicRuntimeConfig: {
+        port: process.env.PORT || 3000
+    },
+    images: {
+        remotePatterns: [
+            {
+                protocol: "https",
+                hostname: "*"
+            }
+        ]
+    },
+    async headers() {
+        return [
+            {
+                source: "/api/:path*",
+                headers: [
+                    {
+                        key: "Access-Control-Allow-Origin",
+                        value: "*",
+                    },
+                    {
+                        key: "Access-Control-Allow-Methods",
+                        value: "GET, POST, PUT, DELETE, OPTIONS",
+                    },
+                    {
+                        key: "Access-Control-Allow-Headers",
+                        value: "Content-Type, Authorization",
+                    },
+                    {
+                        key: "Access-Control-Allow-Credentials",
+                        value: "true"
+                    },
+                ],
+            },
+        ]
+    }
+};
+
+export default nextConfig;
