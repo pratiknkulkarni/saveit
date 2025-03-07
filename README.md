@@ -1,42 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [
-`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+## Save It
 
-## Getting Started
+### A Minimal & Smart Bookmark Manager
 
-First, run the development server:
+**Save It** is a simple yet powerful bookmarking application designed to help users save, organize, and retrieve bookmarks effortlessly. The app automatically fetches metadata for saved links and provides intuitive filtering, searching, and categorization options.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+---
+
+## Features
+
+- **Save Bookmarks with Metadata** – Automatically fetches titles, descriptions, and thumbnails for saved links.
+- **Organize with Tags & Folders** – Categorize bookmarks easily with custom tags and folders.
+- **Powerful Search & Filtering** – Quickly find bookmarks with a built-in search (powered by MiniSearch) and filters.
+- **Favorite & Archive Bookmarks** – Mark important bookmarks as favorites or archive them for later.
+- **Clean & Minimal UI** – Designed for a distraction-free and efficient bookmarking experience.
+
+---
+
+## Why I Built This
+
+I created **Save It** because I wanted a fast, clutter-free bookmarking tool that automatically organizes saved links. Unlike traditional bookmark managers, this app retrieves metadata instantly and provides an easy-to-use interface for managing bookmarks efficiently.
+
+---
+
+## Tech Stack
+
+- **Frontend**: Next.js 
+- **Database**: SQLite with Prisma ORM
+- **Search**: MiniSearch (for efficient search functionality)
+- **Backend**: API routes in Next.js
+- **Containerization**: Docker (optional)
+
+---
+
+## Installation & Setup
+
+Clone the Repository
+
+```sh
+git clone https://github.com/praaatik/saveit
+cd saveit
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Run Locally
 
-You can start editing the page by modifying `app/SearchResults.tsx`. The page auto-updates as you edit the file.
+1. Install dependencies:
+   ```sh
+   npm install
+   ```  
+2. Run the development server:
+   ```sh
+   npm run dev
+   ```  
+3. Open `http://localhost:3000` in your browser.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically
-optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+### Run with Docker
 
-To learn more about Next.js, take a look at the following resources:
+1. Build the Docker image:
+   ```sh
+   docker build -t saveit .
+   ```  
+2. Run the container:
+   ```sh
+   docker run -p 3000:3000 saveit
+   ```  
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Usage
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions
-are welcome!
+- **Add a bookmark**: Paste a link, and metadata is fetched automatically.
+- **Search & filter**: Use tags, folders, or keywords to find bookmarks.
+- **Manage bookmarks**: Favorite, archive, or delete as needed.
+- **Sort by date added** – View bookmarks chronologically.
+- **Dark mode** – For better accessibility.
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use
-the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme)
-from the creators of Next.js.
+## Future Plans
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for
-more details.
+- **Bookmark reminders** – Get notified to revisit saved links.
+
+---
+
+## License
+
+This project is licensed under [MIT License](LICENSE).
