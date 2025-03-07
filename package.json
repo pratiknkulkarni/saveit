@@ -40,7 +40,7 @@
     "@types/better-sqlite3": "^7.6.12",
     "@types/jest": "^29.5.14",
     "@vitejs/plugin-react": "^4.3.4",
-    "axios": "^1.7.9",
+    "axios": "^1.8.2",
     "better-auth": "^1.1.10",
     "better-sqlite3": "^11.7.2",
     "cheerio": "^1.0.0",
