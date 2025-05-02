@@ -1,10 +1,14 @@
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  // url = "postgresql://saveit_user:saveit_password@postgres_saveit:5432/saveit_db?connect_timeout=300"
+  // url = "postgresql://saveit_user:saveit_password@172.18.1.15:5432/saveit_db?connect_timeout=300"
+  // url = "postgresql://saveit_user:saveit_password@172.18.1.15:5432/saveit_db"
+  url = env("DATABASE_URL")
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "debian-openssl-1.1.x"]
 }
 
 model Bookmark {

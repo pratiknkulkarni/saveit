@@ -1,8 +1,8 @@
 "use server"
 
-import {z} from "zod"
-import {revalidatePath} from "next/cache"
-import {Prisma, PrismaClient} from "@prisma/client"
+import { z } from "zod"
+import { revalidatePath } from "next/cache"
+import { Prisma, PrismaClient } from "@prisma/client"
 import {
     CreateBookmarkResponse,
     DeleteBookmarkByUserIdResponse, GetBookmarkByUserIdResponse,
@@ -28,6 +28,7 @@ const createBookmark = async (formData: FormData, userId: string): Promise<Creat
         }
 
         const validatedData = bookmarkSchema.safeParse(rawData);
+        console.log(validatedData);
 
         if (!validatedData.success) {
             return {
@@ -59,12 +60,14 @@ const createBookmark = async (formData: FormData, userId: string): Promise<Creat
         }
 
         revalidatePath("/home");
-        return {success: true, data: bookmarks}
+        return { success: true, data: bookmarks }
     } catch (error) {
+        console.log("error -> ");
+        console.log(error);
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return {success: false, error: "Database error"}
+            return { success: false, error: "Database error" }
         } else {
-            return {success: false, error: "Unknown error"}
+            return { success: false, error: "Unknown error" }
         }
     } finally {
         await prisma.$disconnect()
@@ -80,12 +83,12 @@ const getBookmarksByUserId = async (
 
     try {
         const totalItems = await prisma.bookmark.count({
-            where: {userId}
+            where: { userId }
         });
 
         const bookmarks = await prisma.bookmark.findMany({
-            where: {userId},
-            orderBy: {createdAt: 'desc'},
+            where: { userId },
+            orderBy: { createdAt: 'desc' },
             skip: (page - 1) * pageSize,
             take: pageSize,
         });
@@ -271,22 +274,22 @@ const updateBookmark = async (formData: FormData, bookmarkId: number, userId: st
         });
 
         if (!existingBookmark) {
-            return {success: false, message: "Bookmark not found."};
+            return { success: false, message: "Bookmark not found." };
         }
 
         await prisma.bookmark.update({
-            where: {id: bookmarkId},
+            where: { id: bookmarkId },
             data: {
-                ...(rawData.url && {url: rawData.url}),
-                ...(rawData.title !== null && {title: rawData.title}),
-                ...(rawData.description !== null && {description: rawData.description}),
-                ...(rawData.folderId !== undefined && {folderId: rawData.folderId}),
+                ...(rawData.url && { url: rawData.url }),
+                ...(rawData.title !== null && { title: rawData.title }),
+                ...(rawData.description !== null && { description: rawData.description }),
+                ...(rawData.folderId !== undefined && { folderId: rawData.folderId }),
             },
         });
 
         if (rawData.tagsModified) {
             await prisma.bookmarkTags.deleteMany({
-                where: {bookmarkId}
+                where: { bookmarkId }
             });
 
             if (rawData.tags.length > 0) {
@@ -300,7 +303,7 @@ const updateBookmark = async (formData: FormData, bookmarkId: number, userId: st
         }
 
         revalidatePath("/home");
-        return {success: true, message: "Bookmark updated successfully."};
+        return { success: true, message: "Bookmark updated successfully." };
     } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
             return {
@@ -323,4 +326,4 @@ const updateBookmark = async (formData: FormData, bookmarkId: number, userId: st
     }
 }
 
-export {createBookmark, getBookmarksByUserId, deleteBookmarkByUserId, toggleBookmarkFavorite, updateBookmark};
+export { createBookmark, getBookmarksByUserId, deleteBookmarkByUserId, toggleBookmarkFavorite, updateBookmark };

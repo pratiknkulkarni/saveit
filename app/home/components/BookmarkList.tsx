@@ -1,6 +1,6 @@
 "use client"
 
-import {useEffect, useRef, useState} from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
     Pagination,
     PaginationContent,
@@ -10,23 +10,23 @@ import {
     PaginationNext,
     PaginationPrevious,
 } from "@/components/ui/pagination";
-import {useBookmarksOnHomePageQuery} from '@/hooks/use-bookmarks-on-home-page-query'
-import {useSettings} from "@/app/context/SettingsContext";
-import {authClient} from "@/lib/auth-client";
-import {useTagsForBookmarksQuery} from "@/hooks/use-tags-for-bookmarks-query";
-import {Skeleton} from "@/components/ui/skeleton";
+import { useBookmarksOnHomePageQuery } from '@/hooks/use-bookmarks-on-home-page-query'
+import { useSettings } from "@/app/context/SettingsContext";
+import { authClient } from "@/lib/auth-client";
+import { useTagsForBookmarksQuery } from "@/hooks/use-tags-for-bookmarks-query";
+import { Skeleton } from "@/components/ui/skeleton";
 import BookmarkCard from "@/app/home/components/BookmarkCard";
 
-const BookmarksList = ({userId}: { userId: string }) => {
+const BookmarksList = ({ userId }: { userId: string }) => {
     const [currentPage, setCurrentPage] = useState(1);
-    const {data: session} = authClient.useSession();
+    const { data: session } = authClient.useSession();
     const topRef = useRef<HTMLDivElement>(null);
-    const {settings} = useSettings();
+    const { settings } = useSettings();
     const [bookmarkIds, setBookmarkIds] = useState<number[]>([]);
     const pageSize = settings.itemsPerPage;
 
     // get the bookmarks
-    const {data: bookmarksResponse, isLoading} = useBookmarksOnHomePageQuery(userId, currentPage, pageSize);
+    const { data: bookmarksResponse, isLoading } = useBookmarksOnHomePageQuery(userId, currentPage, pageSize);
 
     // get the tags
     const {
@@ -35,6 +35,7 @@ const BookmarksList = ({userId}: { userId: string }) => {
     } = useTagsForBookmarksQuery(session?.user?.id, bookmarkIds);
 
     useEffect(() => {
+        console.log(bookmarksResponse);
         if (bookmarksResponse?.success && bookmarksResponse?.data) {
             setBookmarkIds(bookmarksResponse.data.data.map(bookmark => bookmark.id));
 
@@ -48,12 +49,12 @@ const BookmarksList = ({userId}: { userId: string }) => {
 
     if (isLoading) return (
         <div className={"flex gap-6 flex-col"}>
-            <Skeleton className="w-full h-[160px]"/>
-            <Skeleton className="w-full h-[160px]"/>
-            <Skeleton className="w-full h-[160px]"/>
-            <Skeleton className="w-full h-[160px]"/>
-            <Skeleton className="w-full h-[160px]"/>
-            <Skeleton className="w-full h-[160px]"/>
+            <Skeleton className="w-full h-[160px]" />
+            <Skeleton className="w-full h-[160px]" />
+            <Skeleton className="w-full h-[160px]" />
+            <Skeleton className="w-full h-[160px]" />
+            <Skeleton className="w-full h-[160px]" />
+            <Skeleton className="w-full h-[160px]" />
         </div>
     )
 
@@ -67,13 +68,13 @@ const BookmarksList = ({userId}: { userId: string }) => {
 
     if (!bookmarksResponse?.success) return <div>Error: {bookmarksResponse?.error}</div>;
 
-    const {data: bookmarks, metadata} = bookmarksResponse.data;
+    const { data: bookmarks, metadata } = bookmarksResponse.data;
 
     console.log(bookmarks);
 
     const handlePageChange = (page: number) => {
         setCurrentPage(page);
-        topRef.current?.scrollIntoView({block: "start"});
+        topRef.current?.scrollIntoView({ block: "start" });
     };
 
     return (
@@ -81,7 +82,7 @@ const BookmarksList = ({userId}: { userId: string }) => {
             <ul className="space-y-4">
                 {bookmarks.map((bookmark) => (
                     bookmarkTagsResponse &&
-                    <BookmarkCard key={bookmark.id} bookmark={bookmark} bookmarkTagsResponse={bookmarkTagsResponse}/>
+                    <BookmarkCard key={bookmark.id} bookmark={bookmark} bookmarkTagsResponse={bookmarkTagsResponse} />
                 ))}
             </ul>
             {metadata.totalPages > 1 && (
@@ -115,7 +116,7 @@ const BookmarksList = ({userId}: { userId: string }) => {
                                 (page === currentPage - 2 && currentPage > 3) ||
                                 (page === currentPage + 2 && currentPage < metadata.totalPages - 2)
                             ) {
-                                return <PaginationEllipsis key={page}/>;
+                                return <PaginationEllipsis key={page} />;
                             }
                             return null;
                         })}
