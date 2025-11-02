@@ -36,6 +36,7 @@ const Header = ({toggleSidebar, isSidebarCollapsed}: HeaderProps) => {
                     });
                 },
                 onError: (error) => {
+                    console.log(error);
                 }
             },
         });

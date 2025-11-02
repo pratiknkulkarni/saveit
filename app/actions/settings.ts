@@ -1,42 +1,42 @@
 "use server"
 
-import {PrismaClient, Settings} from "@prisma/client";
-import {ApplyDefaultSettingsInput, ApplySettingsInput} from "@/app/actions/types";
+import { PrismaClient, Settings } from "@prisma/client";
+import { ApplyDefaultSettingsInput, ApplySettingsInput } from "@/app/actions/types";
 
 
 export async function commitSettings({
-                                         userId,
-                                         theme,
-                                         bookmarkDisplay,
-                                         showTags,
-                                         bookmarkLayout,
-                                         itemsPerPage,
-                                     }: ApplySettingsInput): Promise<{ success: boolean; message: string }> {
+    userId,
+    theme,
+    bookmarkDisplay,
+    showTags,
+    bookmarkLayout,
+    itemsPerPage,
+}: ApplySettingsInput): Promise<{ success: boolean; message: string }> {
 
     const prisma = new PrismaClient();
     try {
         await prisma.settings.update({
-            where: {userId},
+            where: { userId },
             data: {
-                ...(theme && {theme}),
-                ...(bookmarkDisplay && {bookmarkDisplay: bookmarkDisplay.join(",")}),
-                ...(showTags !== undefined && {showTags}),
-                ...(bookmarkLayout && {bookmarkLayout}),
-                ...(itemsPerPage && {itemsPerPage}),
+                ...(theme && { theme }),
+                ...(bookmarkDisplay && { bookmarkDisplay: bookmarkDisplay.join(",") }),
+                ...(showTags !== undefined && { showTags }),
+                ...(bookmarkLayout && { bookmarkLayout }),
+                ...(itemsPerPage && { itemsPerPage }),
             },
         });
 
-        return {success: true, message: "Settings applied successfully."};
+        return { success: true, message: "Settings applied successfully." };
     } catch (error) {
         console.error("Error applying settings:", error);
-        return {success: false, message: "Failed to apply settings. Please try again."};
+        return { success: false, message: "Failed to apply settings. Please try again." };
     }
 }
 
 
 export async function applyDefaultSettings({
-                                               userId,
-                                           }: ApplyDefaultSettingsInput): Promise<{
+    userId,
+}: ApplyDefaultSettingsInput): Promise<{
     success: boolean;
     message: string
 }> {
@@ -53,10 +53,10 @@ export async function applyDefaultSettings({
                 itemsPerPage: 20,
             },
         });
-        return {success: true, message: "Default settings applied successfully."};
+        return { success: true, message: "Default settings applied successfully." };
     } catch (error) {
         console.error("Error applying default settings:", error);
-        return {success: false, message: "Failed to apply default settings."};
+        return { success: false, message: "Failed to apply default settings." };
     }
 }
 
@@ -65,7 +65,7 @@ export async function getUserSettings(userId: string): Promise<Settings | null> 
 
     try {
         const settings = await prisma.settings.findFirst({
-            where: {userId},
+            where: { userId },
         });
 
         return settings;

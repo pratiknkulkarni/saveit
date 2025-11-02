@@ -1,6 +1,6 @@
 "use server"
 
-import {Prisma, PrismaClient} from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 // TODO: extract this out
 export type FilteredBookmark = {
@@ -23,7 +23,7 @@ export type GetFilteredBookmarksResponse = {
     error?: string;
 };
 
-const getFilteredBookmarks = async ({folderId, tagIds}: {
+const getFilteredBookmarks = async ({ folderId, tagIds }: {
     folderId?: number;
     tagIds?: number[]
 }): Promise<GetFilteredBookmarksResponse> => {
@@ -31,7 +31,7 @@ const getFilteredBookmarks = async ({folderId, tagIds}: {
 
     try {
         if (!folderId && (!tagIds || tagIds.length === 0)) {
-            return {success: false, error: "Invalid parameters", data: []};
+            return { success: false, error: "Invalid parameters", data: [] };
         }
 
         const bookmarks = await prisma.bookmark.findMany({
@@ -75,7 +75,7 @@ const getFilteredBookmarks = async ({folderId, tagIds}: {
                 success: true,
                 data: filteredBookmarks.map((bookmark) => ({
                     ...bookmark,
-                    tags: bookmark.BookmarkTags.map(({tagId, tag}) => ({
+                    tags: bookmark.BookmarkTags.map(({ tagId, tag }) => ({
                         id: tagId,
                         name: tag.name,
                     })),
@@ -87,7 +87,7 @@ const getFilteredBookmarks = async ({folderId, tagIds}: {
             success: true,
             data: bookmarks.map((bookmark) => ({
                 ...bookmark,
-                tags: bookmark.BookmarkTags.map(({tagId, tag}) => ({
+                tags: bookmark.BookmarkTags.map(({ tagId, tag }) => ({
                     id: tagId,
                     name: tag.name,
                 })),
@@ -95,12 +95,12 @@ const getFilteredBookmarks = async ({folderId, tagIds}: {
         };
     } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return {success: false, error: "Database error", data: []};
+            return { success: false, error: "Database error", data: [] };
         }
-        return {success: false, error: "Unknown error", data: []};
+        return { success: false, error: "Unknown error", data: [] };
     } finally {
         await prisma.$disconnect();
     }
 };
 
-export {getFilteredBookmarks}
+export { getFilteredBookmarks }

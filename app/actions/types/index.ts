@@ -1,4 +1,4 @@
-import {Bookmark, BookmarkTags} from "@prisma/client";
+import { Bookmark, BookmarkTags } from "@prisma/client";
 
 type ApplySettingsInput = {
     userId: string;

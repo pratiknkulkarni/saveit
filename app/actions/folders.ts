@@ -1,16 +1,15 @@
 "use server"
 
-import {Prisma, PrismaClient} from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import {
     CreateFoldersResponse,
     DeleteFolderResponse,
     GetUserFoldersResponse, UpdateFolderResponse,
-    UpdateTagResponse
 } from "@/app/actions/types";
 
-const getUserFolders = async ({userId}: { userId: string | undefined }): Promise<GetUserFoldersResponse> => {
+const getUserFolders = async ({ userId }: { userId: string | undefined }): Promise<GetUserFoldersResponse> => {
     if (!userId) {
-        return {success: false, error: "User not found!"}
+        return { success: false, error: "User not found!" }
     }
 
     const prisma = new PrismaClient();
@@ -25,16 +24,16 @@ const getUserFolders = async ({userId}: { userId: string | undefined }): Promise
             }
         });
 
-        return {success: true, data: folders};
+        return { success: true, data: folders };
     } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return {success: false, error: "Database error"}
+            return { success: false, error: "Database error" }
         }
-        return {success: false, error: "Failed to fetch folders. Please try again."};
+        return { success: false, error: "Failed to fetch folders. Please try again." };
     }
 }
 
-const createFolders = async ({userId, names}: {
+const createFolders = async ({ userId, names }: {
     names: string[],
     userId: string | undefined
 }): Promise<CreateFoldersResponse> => {
@@ -61,7 +60,7 @@ const createFolders = async ({userId, names}: {
 
     try {
         if (!userId) {
-            return {success: false, error: "User not found."}
+            return { success: false, error: "User not found." }
 
         }
         const foldersData = names.map((name) => ({
@@ -79,18 +78,18 @@ const createFolders = async ({userId, names}: {
     } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
             if (error.code === 'P2002') {
-                return {success: false, error: "Folder name already exists."};
+                return { success: false, error: "Folder name already exists." };
             }
-            return {success: false, error: error.message}
+            return { success: false, error: error.message }
         }
-        return {success: false, error: "Error creating folders, please try again."}
+        return { success: false, error: "Error creating folders, please try again." }
     } finally {
         await prisma.$disconnect();
     }
 }
 
 
-const deleteFolder = async ({folderId, userId}: {
+const deleteFolder = async ({ folderId, userId }: {
     folderId: number;
     userId: string | undefined;
 }): Promise<DeleteFolderResponse> => {
@@ -98,7 +97,7 @@ const deleteFolder = async ({folderId, userId}: {
 
     try {
         if (!userId) {
-            return {success: false, error: "User not found"};
+            return { success: false, error: "User not found" };
         }
 
         await prisma.bookmark.updateMany({
@@ -119,22 +118,22 @@ const deleteFolder = async ({folderId, userId}: {
             },
         });
 
-        return {success: true};
+        return { success: true };
     } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return {success: false, error: "Database error"};
+            return { success: false, error: "Database error" };
         }
-        return {success: false, error: "Unknown error"};
+        return { success: false, error: "Unknown error" };
     } finally {
         await prisma.$disconnect();
     }
 };
 
 const updateFolder = async ({
-                                folderId,
-                                newFolderName,
-                                userId
-                            }: {
+    folderId,
+    newFolderName,
+    userId
+}: {
     folderId: number,
     newFolderName: string,
     userId: string | undefined
@@ -143,7 +142,7 @@ const updateFolder = async ({
 
     try {
         if (!userId) {
-            return {success: false, error: "User not found"}
+            return { success: false, error: "User not found" }
         }
 
         await prisma.folder.update({
@@ -156,20 +155,20 @@ const updateFolder = async ({
             }
         });
 
-        return {success: true};
+        return { success: true };
     } catch (error) {
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
             if (error.code === 'P2002') {
-                return {success: false, error: "Folder with this name already exists."}
+                return { success: false, error: "Folder with this name already exists." }
             }
-            return {success: false, error: "Database error"}
+            return { success: false, error: "Database error" }
         }
 
-        return {success: false, error: "Unknown error"}
+        return { success: false, error: "Unknown error" }
     } finally {
         await prisma.$disconnect()
     }
 }
 
 
-export {createFolders, getUserFolders, deleteFolder, updateFolder}
+export { createFolders, getUserFolders, deleteFolder, updateFolder }

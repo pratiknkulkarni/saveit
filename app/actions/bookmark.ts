@@ -2,12 +2,12 @@
 
 import { z } from "zod"
 import { revalidatePath } from "next/cache"
-import { Prisma, PrismaClient } from "@prisma/client"
 import {
     CreateBookmarkResponse,
     DeleteBookmarkByUserIdResponse, GetBookmarkByUserIdResponse,
     Tag
 } from "@/app/actions/types";
+import { PrismaClient, Prisma } from "@prisma/client";
 
 const createBookmark = async (formData: FormData, userId: string): Promise<CreateBookmarkResponse> => {
     const prisma = new PrismaClient();
