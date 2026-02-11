@@ -202,9 +202,6 @@ describe("Server Action: createBookmark", () => {
 
         // 3. Verify Failure
         expect(response.success).toBe(false);
-        expect(response.error).toBe("Unauthorized"); // Our "Failed to update bookmark" catch might hide the specific error, let's see.
-        // Actually, looking at my code, I logged the specific error but returned a generic one?
-        // Wait, I threw "Unauthorized" inside the transaction.
-        // My error handler wraps it. It will likely return "Failed to update bookmark" unless I exposed the error message.
+        expect(response.error).toBe("Unauthorized"); //  yea, got it resolved now
     });
 });
