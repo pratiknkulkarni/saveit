@@ -1,47 +1,66 @@
 "use server"
 
-import { PrismaClient, Settings } from "@prisma/client";
-import { ApplyDefaultSettingsInput, ApplySettingsInput } from "@/app/actions/types";
+import {Settings} from "@prisma/client";
+import {ApplyDefaultSettingsInput, ApplySettingsInput} from "@/app/actions/types";
+import {logger} from "@/lib/logger";
+import {prisma} from "@/lib/prisma";
 
 
 export async function commitSettings({
-    userId,
-    theme,
-    bookmarkDisplay,
-    showTags,
-    bookmarkLayout,
-    itemsPerPage,
-}: ApplySettingsInput): Promise<{ success: boolean; message: string }> {
+                                         userId,
+                                         theme,
+                                         bookmarkDisplay,
+                                         showTags,
+                                         bookmarkLayout,
+                                         itemsPerPage,
+                                     }: ApplySettingsInput): Promise<{ success: boolean; message: string }> {
 
-    const prisma = new PrismaClient();
     try {
+        const updatedFields = {
+            ...(theme && {theme}),
+            ...(bookmarkDisplay && {bookmarkDisplay: bookmarkDisplay.join(",")}),
+            ...(showTags !== undefined && {showTags}),
+            ...(bookmarkLayout && {bookmarkLayout}),
+            ...(itemsPerPage && {itemsPerPage}),
+        }
+
         await prisma.settings.update({
-            where: { userId },
-            data: {
-                ...(theme && { theme }),
-                ...(bookmarkDisplay && { bookmarkDisplay: bookmarkDisplay.join(",") }),
-                ...(showTags !== undefined && { showTags }),
-                ...(bookmarkLayout && { bookmarkLayout }),
-                ...(itemsPerPage && { itemsPerPage }),
-            },
+            where: {userId},
+            data: updatedFields,
         });
 
-        return { success: true, message: "Settings applied successfully." };
+        logger.info(
+            {
+                userId,
+                fieldsUpdated: Object.keys(updatedFields),
+                theme,
+                bookmarkLayout,
+                itemsPerPage
+            },
+            "User Settings: Updated"
+        );
+
+        return {success: true, message: "Settings applied successfully."};
     } catch (error) {
-        console.error("Error applying settings:", error);
-        return { success: false, message: "Failed to apply settings. Please try again." };
+        logger.error(
+            {
+                err: error,
+                userId,
+                attemptedFields: {theme, bookmarkDisplay, showTags, bookmarkLayout, itemsPerPage}
+            },
+            "User Settings: Update Failed"
+        );
+        return {success: false, message: "Failed to apply settings. Please try again."};
     }
 }
 
 
 export async function applyDefaultSettings({
-    userId,
-}: ApplyDefaultSettingsInput): Promise<{
+                                               userId,
+                                           }: ApplyDefaultSettingsInput): Promise<{
     success: boolean;
     message: string
 }> {
-    const prisma = new PrismaClient();
-
     try {
         await prisma.settings.create({
             data: {
@@ -53,24 +72,41 @@ export async function applyDefaultSettings({
                 itemsPerPage: 20,
             },
         });
-        return { success: true, message: "Default settings applied successfully." };
+
+        logger.info(
+            {userId},
+            "Default Settings: Created"
+        );
+
+        return {success: true, message: "Default settings applied successfully."};
     } catch (error) {
-        console.error("Error applying default settings:", error);
-        return { success: false, message: "Failed to apply default settings." };
+        logger.error(
+            {err: error, userId},
+            "Default Settings: Creation Failed"
+        );
+        return {success: false, message: "Failed to apply default settings."};
     }
 }
 
 export async function getUserSettings(userId: string): Promise<Settings | null> {
-    const prisma = new PrismaClient();
-
     try {
         const settings = await prisma.settings.findFirst({
-            where: { userId },
+            where: {userId},
         });
+
+        if (!settings) {
+            logger.warn(
+                {userId},
+                "User Settings: Not Found"
+            );
+        }
 
         return settings;
     } catch (error) {
-        console.error("Error fetching user settings:", error);
+        logger.error(
+            {err: error, userId},
+            "User Settings: Fetch Failed"
+        );
         return null;
     }
 }

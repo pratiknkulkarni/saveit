@@ -2,7 +2,7 @@
 
 import {Bookmark, Folder, PrismaClient, Tag} from "@prisma/client";
 import MiniSearch, {SearchResult} from "minisearch";
-import {Filter, MatchMode} from "@/app/actions/enum";
+import {Filter, MatchMode} from "@/app/actions/search_enum";
 
 const searchBookmarks = async (searchTerm: string, userId: string | undefined) => {
     const searchFields = ["title", "url", "description", "tags"];
@@ -39,6 +39,8 @@ const searchBookmarks = async (searchTerm: string, userId: string | undefined) =
     return results;
 }
 
+// this HAS TO crash if number of bookmark are huge
+// TODO: I need to ensure it doesn't.
 const searchAll = async (
     searchTerm: string | undefined,
     userId: string | undefined,

@@ -1,7 +1,7 @@
 import {useQuery} from "@tanstack/react-query";
 import {QUERY_KEYS} from "@/lib/queryKeys";
 import {searchAll} from "@/app/actions/search";
-import {Filter, MatchMode} from "@/app/actions/enum";
+import {Filter, MatchMode} from "@/app/actions/search_enum";
 
 export const useSearchResultsQuery = (searchTerm: string, filter: Filter, matchMode: MatchMode, userId: string | undefined) => {
     return useQuery({
