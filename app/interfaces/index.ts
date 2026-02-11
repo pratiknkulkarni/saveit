@@ -29,7 +29,7 @@ export interface SettingsContextType {
     updateShowTags: (show: boolean) => void;
     updateItemsPerPage: (itemsPerPage: number) => void;
     updateBookmarkLayout: (layout: BookmarkLayoutOption) => void;
-    applySettings: () => ApplySettingsResponse;
+    applySettings: () => Promise<ApplySettingsResponse>;
     cancelPendingChanges: () => void;
 }
 

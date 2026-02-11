@@ -9,7 +9,6 @@ import {useTheme} from "next-themes";
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
-//TODO: Update the location for SettingsProvider in layout, currently in root
 export function SettingsProvider({children}: { children: React.ReactNode }) {
     const {data: session} = authClient.useSession();
     const {setTheme, theme} = useTheme();
@@ -23,22 +22,11 @@ export function SettingsProvider({children}: { children: React.ReactNode }) {
     });
     const [pendingChanges, setPendingChanges] = useState<PendingSettings>({});
 
-    // called only when the user clicks on the header to update the theme
-    const updateTheme = useCallback((theme: ThemeOption) => {
-        setCurrentSettings((prev) => ({...prev, theme}));
-        setTheme(theme);
-
-        if (session?.user?.id) {
-            commitSettings({
-                userId: session?.user?.id, theme: theme,
-            });
-        }
-    }, [setTheme, session?.user?.id])
-
-    // runs only on the first load or when user id changes, loads the existing settings in the memory
     useEffect(() => {
         async function fetchUserSettings() {
-            const settings = await getUserSettings(session?.user?.id as string);
+            if (!session?.user?.id) return;
+
+            const settings = await getUserSettings();
             if (settings) {
                 const formattedSettings: Settings = {
                     bookmarkDisplay: settings.bookmarkDisplay.split(",") as BookmarkDisplayOption[],
@@ -52,85 +40,64 @@ export function SettingsProvider({children}: { children: React.ReactNode }) {
             }
         }
 
-        fetchUserSettings().then();
+        fetchUserSettings();
     }, [session?.user?.id, setTheme]);
 
-    const updateItemsPerPage = (itemsPerPage: number) => {
-        setCurrentSettings(prev => ({
-            ...prev,
-            itemsPerPage,
-        }));
 
-        // use this to commit to DB
-        setPendingChanges(prev => ({
-            ...prev,
-            itemsPerPage,
-        }));
+    const updateTheme = useCallback((theme: ThemeOption) => {
+        setCurrentSettings((prev) => ({...prev, theme}));
+        setTheme(theme);
+
+        if (session?.user?.id) {
+            commitSettings({theme});
+        }
+    }, [setTheme, session?.user?.id]);
+
+    const updateItemsPerPage = (itemsPerPage: number) => {
+        setCurrentSettings(prev => ({...prev, itemsPerPage}));
+        setPendingChanges(prev => ({...prev, itemsPerPage}));
     };
 
     const updateBookmarkDisplay = (options: BookmarkDisplayOption[]) => {
-        setCurrentSettings(prev => ({
-            ...prev,
-            bookmarkDisplay: options,
-        }));
-
-        // use this to commit to DB
-        setPendingChanges(prev => ({
-            ...prev,
-            bookmarkDisplay: options,
-        }));
+        setCurrentSettings(prev => ({...prev, bookmarkDisplay: options}));
+        setPendingChanges(prev => ({...prev, bookmarkDisplay: options}));
     };
 
     const updateShowTags = useCallback((show: boolean) => {
         setCurrentSettings(prev => ({...prev, showTags: show}));
-
-        // Also used to commit to db
         setPendingChanges(prev => ({...prev, showTags: show}));
     }, []);
 
     const updateBookmarkLayout = useCallback((layout: BookmarkLayoutOption) => {
         setCurrentSettings(prev => ({...prev, bookmarkLayout: layout}));
-
-        // use to commit to db
         setPendingChanges(prev => ({...prev, bookmarkLayout: layout}));
     }, []);
 
-    function applySettings(): ApplySettingsResponse {
+    const applySettings = useCallback(async (): Promise<ApplySettingsResponse> => {
         if (Object.keys(pendingChanges).length === 0) {
-            return {
-                success: true,
-                statusCode: 200,
-                message: "No changes to apply"
+            return {success: true, statusCode: 200, message: "No changes to apply"};
+        }
+
+        setCurrentSettings(prev => ({...prev, ...pendingChanges}));
+
+        try {
+            const result = await commitSettings({...pendingChanges});
+
+            setPendingChanges({});
+
+            if (result.success) {
+                return {success: true, statusCode: 200, message: result.message};
+            } else {
+                return {success: false, statusCode: 500, message: result.message};
             }
+        } catch (e) {
+            return {success: false, statusCode: 500, message: "Failed to save settings"};
         }
-
-        setCurrentSettings(prev => ({
-            ...prev,
-            ...pendingChanges
-        }));
-
-        // "commit" the final changes
-        // TODO: save these changes in the database or local storage
-        commitSettings({
-            userId: session?.user?.id as string,
-            ...currentSettings
-        }).then(() => {
-            //TODO:
-        });
-
-        // and "reset" the pending changes
-        setPendingChanges({});
-
-        return {
-            success: true,
-            statusCode: 200,
-            message: "Changes applied successfully."
-        }
-    }
+    }, [pendingChanges]);
 
     const cancelPendingChanges = () => {
         setPendingChanges({});
-    }
+    };
 
     return (
         <SettingsContext.Provider
@@ -140,7 +107,7 @@ export function SettingsProvider({children}: { children: React.ReactNode }) {
                 updateShowTags,
                 updateBookmarkLayout,
                 updateItemsPerPage,
-                applySettings: applySettings,
+                applySettings,
                 cancelPendingChanges,
                 updateTheme,
             }}
