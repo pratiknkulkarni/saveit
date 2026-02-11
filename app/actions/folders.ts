@@ -1,174 +1,196 @@
 "use server"
 
-import { Prisma, PrismaClient } from "@prisma/client";
+import {revalidatePath} from "next/cache";
+import {prisma} from "@/lib/prisma";
+import {getCurrentUser} from "@/lib/auth-server";
+import {logger} from "@/lib/logger";
+import {
+    createFoldersSchema,
+    updateFolderSchema,
+    deleteFolderSchema
+} from "@/app/actions/schema/folder";
+import {Prisma} from "@prisma/client";
 import {
     CreateFoldersResponse,
     DeleteFolderResponse,
-    GetUserFoldersResponse, UpdateFolderResponse,
+    GetUserFoldersResponse,
+    UpdateFolderResponse,
 } from "@/app/actions/types";
 
-const getUserFolders = async ({ userId }: { userId: string | undefined }): Promise<GetUserFoldersResponse> => {
-    if (!userId) {
-        return { success: false, error: "User not found!" }
-    }
-
-    const prisma = new PrismaClient();
-
+/**
+ * Retrieves all folders for an authenticated user.
+ * * @returns {Promise<GetUserFoldersResponse>}
+ */
+export const getUserFolders = async (): Promise<GetUserFoldersResponse> => {
     try {
+        const user = await getCurrentUser();
+
         const folders = await prisma.folder.findMany({
+            where: {
+                userId: user.id,
+            },
             select: {
                 id: true,
                 name: true,
-            }, where: {
-                userId,
+            },
+            orderBy: {
+                createdAt: 'desc'
             }
         });
 
-        return { success: true, data: folders };
+        return {success: true, data: folders};
+
     } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return { success: false, error: "Database error" }
-        }
-        return { success: false, error: "Failed to fetch folders. Please try again." };
+        logger.error({err: error}, "Get User Folders: Failed");
+        return {success: false, error: "Failed to fetch folders."};
     }
 }
 
-const createFolders = async ({ userId, names }: {
-    names: string[],
-    userId: string | undefined
-}): Promise<CreateFoldersResponse> => {
-    const prisma = new PrismaClient();
-
-    const existingFolders = await prisma.folder.findMany({
-        where: {
-            userId,
-            name: {
-                in: names
-            },
-        }, select: {
-            name: true
-        }
-    });
-
-    if (existingFolders.length > 0) {
-        const existingFolderNames = existingFolders.map(folder => folder.name);
-        return {
-            success: false,
-            error: `Folder${existingFolderNames.length > 1 ? 's' : ''} ${existingFolderNames.join(", ")} already exist.`
-        }
-    }
-
+/**
+ * Creates one or more folders for the authenticated user.
+ * Checks for duplicates before creation.
+ * * @param names - Array of folder names to create.
+ */
+export const createFolders = async ({names}: { names: string[] }): Promise<CreateFoldersResponse> => {
     try {
-        if (!userId) {
-            return { success: false, error: "User not found." }
+        const user = await getCurrentUser();
 
+        const validated = createFoldersSchema.safeParse({names});
+        if (!validated.success) {
+            return {success: false, error: "Invalid folder names"};
         }
-        const foldersData = names.map((name) => ({
-            name,
-            userId
-        }));
 
-        const response = await prisma.folder.createMany({
-            data: foldersData,
+        const folderNames = validated.data.names;
+
+        const existingFolders = await prisma.folder.findMany({
+            where: {
+                userId: user.id,
+                name: {in: folderNames},
+            },
+            select: {name: true}
         });
 
-        return {
-            success: true, data: response.count
-        }
-    } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            if (error.code === 'P2002') {
-                return { success: false, error: "Folder name already exists." };
+        if (existingFolders.length > 0) {
+            const duplicates = existingFolders.map(f => f.name);
+            logger.warn({userId: user.id, duplicates}, "Create Folders: Duplicates found");
+
+            return {
+                success: false,
+                error: `Folder(s) already exist.`,
+                duplicateFolders: duplicates
             }
-            return { success: false, error: error.message }
         }
-        return { success: false, error: "Error creating folders, please try again." }
-    } finally {
-        await prisma.$disconnect();
+
+        const count = await prisma.folder.createMany({
+            data: folderNames.map(name => ({
+                name,
+                userId: user.id
+            }))
+        });
+
+        logger.info({userId: user.id, count: count.count}, "Folders Created");
+        revalidatePath("/home");
+
+        return {success: true, data: count.count};
+
+    } catch (error) {
+        logger.error({err: error}, "Create Folders: Failed");
+        return {success: false, error: "Failed to create folders."};
     }
 }
 
-
-const deleteFolder = async ({ folderId, userId }: {
-    folderId: number;
-    userId: string | undefined;
-}): Promise<DeleteFolderResponse> => {
-    const prisma = new PrismaClient();
-
+/**
+ * Deletes a folder and unlinks any associated bookmarks.
+ * Uses a transaction to ensure bookmarks are not left pointing to a non-existent folder ID
+ * if the deletion fails (though Prisma relations usually restrict this, unlinking is safer UX).
+ * * @param folderId - ID of the folder to delete.
+ */
+export const deleteFolder = async ({folderId}: { folderId: number }): Promise<DeleteFolderResponse> => {
     try {
-        if (!userId) {
-            return { success: false, error: "User not found" };
-        }
+        const user = await getCurrentUser();
 
-        await prisma.bookmark.updateMany({
-            where: {
-                folderId,
-            },
-            data: {
-                folderId: null,
-            },
+        const validated = deleteFolderSchema.safeParse({folderId});
+        if (!validated.success) return {success: false, error: "Invalid folder ID"};
+
+        await prisma.$transaction(async (tx) => {
+            const folder = await tx.folder.findFirst({
+                where: {id: folderId, userId: user.id}
+            });
+
+            if (!folder) {
+                throw new Error("Unauthorized");
+            }
+
+            // this one unlinks the bookmark from the user
+            await tx.bookmark.updateMany({
+                where: {folderId: folderId, userId: user.id},
+                data: {folderId: null}
+            });
+
+            await tx.folder.delete({
+                where: {id: folderId}
+            });
         });
 
-        await prisma.folder.delete({
-            where: {
-                id: folderId,
-            },
-            select: {
-                id: true,
-            },
-        });
+        logger.info({userId: user.id, folderId}, "Folder Deleted");
+        revalidatePath("/home");
+        return {success: true};
 
-        return { success: true };
     } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return { success: false, error: "Database error" };
+        logger.error({err: error, folderId}, "Delete Folder: Failed");
+        if (error instanceof Error && error.message === "Unauthorized") {
+            return {success: false, error: "Folder not found or unauthorized"};
         }
-        return { success: false, error: "Unknown error" };
-    } finally {
-        await prisma.$disconnect();
+        return {success: false, error: "Failed to delete folder."};
     }
 };
 
-const updateFolder = async ({
-    folderId,
-    newFolderName,
-    userId
-}: {
+/**
+ * Updates a folder's name.
+ * * @param folderId - ID of the folder to update.
+ * @param newFolderName - New name for the folder.
+ */
+export const updateFolder = async ({
+                                       folderId,
+                                       newFolderName
+                                   }: {
     folderId: number,
-    newFolderName: string,
-    userId: string | undefined
+    newFolderName: string
 }): Promise<UpdateFolderResponse> => {
-    const prisma = new PrismaClient();
-
     try {
-        if (!userId) {
-            return { success: false, error: "User not found" }
+        const user = await getCurrentUser();
+
+        const validated = updateFolderSchema.safeParse({folderId, newFolderName});
+        if (!validated.success) {
+            return {success: false, error: "Invalid input"};
         }
 
-        await prisma.folder.update({
+        const result = await prisma.folder.updateMany({
             where: {
                 id: folderId,
-                userId: userId,
+                userId: user.id,
             },
             data: {
-                name: newFolderName,
+                name: validated.data.newFolderName,
             }
         });
 
-        return { success: true };
-    } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            if (error.code === 'P2002') {
-                return { success: false, error: "Folder with this name already exists." }
-            }
-            return { success: false, error: "Database error" }
+        if (result.count === 0) {
+            return {success: false, error: "Folder not found or unauthorized"};
         }
 
-        return { success: false, error: "Unknown error" }
-    } finally {
-        await prisma.$disconnect()
+        logger.info({userId: user.id, folderId}, "Folder Updated");
+        revalidatePath("/home");
+        return {success: true};
+
+    } catch (error) {
+        logger.error({err: error, folderId}, "Update Folder: Failed");
+
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            return {success: false, error: "Folder with this name already exists."}
+        }
+
+        return {success: false, error: "Failed to update folder."}
     }
 }
 
-
-export { createFolders, getUserFolders, deleteFolder, updateFolder }
