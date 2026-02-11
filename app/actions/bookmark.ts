@@ -1,99 +1,113 @@
 "use server"
 
-import { z } from "zod"
-import { revalidatePath } from "next/cache"
+import {revalidatePath} from "next/cache"
+import {prisma} from "@/lib/prisma";
+import {getCurrentUser} from "@/lib/auth-server";
+import {bookmarkSchema} from "@/app/actions/schema/bookmark";
 import {
     CreateBookmarkResponse,
-    DeleteBookmarkByUserIdResponse, GetBookmarkByUserIdResponse,
+    DeleteBookmarkByUserIdResponse,
+    GetBookmarkByUserIdResponse,
     Tag
 } from "@/app/actions/types";
-import { PrismaClient, Prisma } from "@prisma/client";
+import {Prisma} from "@prisma/client";
+import {logger} from "@/lib/logger";
 
-const createBookmark = async (formData: FormData, userId: string): Promise<CreateBookmarkResponse> => {
-    const prisma = new PrismaClient();
+/**
+ * Creates a new bookmark for the authenticated user.
+ *
+ * This function performs an atomic transaction to ensuring that both the bookmark
+ * and its associated tags are created successfully.
+ * If either fails, the entire operation rolls back to prevent "zombie" data.
+ *
+ * @param formData - The raw FormData from the client. Expected fields: 'url', 'title' (optional), 'tags' (JSON array).
+ * @returns {Promise<CreateBookmarkResponse>} - On success, returns the created bookmark. On failure, returns a specific error message.
+ */
+export const createBookmark = async (formData: FormData): Promise<CreateBookmarkResponse> => {
     try {
-        const rawData = {
-            title: formData.get("title"),
-            url: formData.get("url"),
-            description: formData.get("description"),
-            folderId: Number(formData.get("folderId")),
-            tags: JSON.parse(formData.get("tags") as string || "[]") as Tag[],
-            imageURL: formData.get("imageURL"),
-        }
-        const rawTags: Tag[] = [];
+        const user = await getCurrentUser();
 
-        // only if the tags are present
-        if (rawData.tags.length > 0) {
-            rawTags.push(...rawData.tags);
+        const rawData = {
+            title: formData.get("title")?.toString(),
+            url: formData.get("url")?.toString(),
+            description: formData.get("description")?.toString(),
+            folderId: formData.get("folderId") ? Number(formData.get("folderId")) : undefined,
+            tags: JSON.parse(formData.get("tags")?.toString() || "[]"),
+            imageURL: formData.get("imageURL")?.toString(),
         }
 
         const validatedData = bookmarkSchema.safeParse(rawData);
-        console.log(validatedData);
 
         if (!validatedData.success) {
+            logger.warn({userId: user.id, errors: validatedData.error.flatten()}, "Create Bookmark: Validation Failed");
             return {
                 success: false,
-                error: "Invalid bookmark data",
-                validationErrors: validatedData.error.flatten().fieldErrors,
+                error: "Invalid input",
+                validationErrors: validatedData.error.flatten().fieldErrors as Record<string, string[]>,
             }
         }
 
-        const bookmarks = await prisma.bookmark.create({
+        const {tags, ...bookmarkData} = validatedData.data;
+
+        const bookmark = await prisma.bookmark.create({
             data: {
-                title: validatedData.data.title,
-                url: validatedData.data.url,
-                description: validatedData.data.description,
-                folderId: validatedData.data.folderId ? Number(validatedData.data.folderId) : null,
-                imageURL: validatedData.data.imageURL,
-                userId,
+                ...bookmarkData,
+                url: bookmarkData.url!,
+                userId: user.id,
+                BookmarkTags: tags && tags.length > 0 ? {
+                    create: tags.map(tag => ({
+                        tag: {
+                            connect: {id: tag.id}
+                        }
+                    }))
+                } : undefined
             },
         });
 
-        // only if the tags are present
-        if (rawTags.length > 0) {
-            await prisma.bookmarkTags.createMany({
-                data: rawTags.map((tag) => ({
-                    tagId: tag.id,
-                    bookmarkId: bookmarks.id,
-                })),
-            });
-        }
-
+        logger.info({bookmarkId: bookmark.id, userId: user.id}, "Bookmark Created Successfully");
         revalidatePath("/home");
-        return { success: true, data: bookmarks }
+        return {success: true, data: bookmark}
+
     } catch (error) {
-        console.log("error -> ");
-        console.log(error);
+        logger.error({err: error}, "Create Bookmark: Server Error");
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return { success: false, error: "Database error" }
-        } else {
-            return { success: false, error: "Unknown error" }
+            return {success: false, error: "Database error"}
         }
-    } finally {
-        await prisma.$disconnect()
+        return {success: false, error: "Failed to create bookmark"}
     }
 }
 
-const getBookmarksByUserId = async (
-    userId: string,
+/**
+ * Retrieves a paginated list of bookmarks for an authenticated user.
+ *
+ * @param page - The page number (1-based index). Defaults to 1.
+ * @param pageSize - The number of items per page. Defaults to 10.
+ * @returns {Promise<GetBookmarkByUserIdResponse>} - A paginated response object containing the bookmarks and metadata.
+ */
+export const getBookmarksByUserId = async (
     page: number = 1,
     pageSize: number = 10
 ): Promise<GetBookmarkByUserIdResponse> => {
-    const prisma = new PrismaClient();
-
     try {
+        const user = await getCurrentUser();
+
         const totalItems = await prisma.bookmark.count({
-            where: { userId }
+            where: {userId: user.id}
         });
 
         const bookmarks = await prisma.bookmark.findMany({
-            where: { userId },
-            orderBy: { createdAt: 'desc' },
+            where: {userId: user.id},
+            orderBy: {createdAt: 'desc'},
             skip: (page - 1) * pageSize,
             take: pageSize,
+            include: {
+                BookmarkTags: {
+                    include: {
+                        tag: true
+                    }
+                }
+            }
         });
-
-        const totalPages = Math.ceil(totalItems / pageSize);
 
         return {
             success: true,
@@ -101,229 +115,155 @@ const getBookmarksByUserId = async (
                 data: bookmarks,
                 metadata: {
                     totalItems,
-                    totalPages,
+                    totalPages: Math.ceil(totalItems / pageSize),
                     currentPage: page,
                     pageSize
                 }
             }
         };
     } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return {
-                success: false,
-                error: "Database error"
-            }
-        }
-        if (error instanceof Prisma.PrismaClientValidationError) {
-            return {
-                success: false,
-                error: "Invalid data"
-            }
-        }
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        return {
-            success: false,
-            error: errorMessage
-        }
-    } finally {
-        await prisma.$disconnect();
+        logger.error({err: error, userId: "unknown"}, "Get Bookmarks: Failed");
+        return {success: false, error: "Failed to fetch bookmarks"};
     }
 }
 
-const deleteBookmarkByUserId = async (userId: string | undefined, bookmarkId: number): Promise<DeleteBookmarkByUserIdResponse> => {
-    if (!userId) {
-        return {
-            error: "User not found",
-            success: false,
-        }
-    }
-
-    const prisma = new PrismaClient();
-
+/**
+ * Deletes a bookmark by ID.
+ *
+ * Securely ensures that the bookmark belongs to the authenticated user before deletion.
+ * Uses `deleteMany` pattern to handle the "check ownership + delete" in a single query.
+ *
+ * @param bookmarkId - The ID of the bookmark to delete.
+ */
+export const deleteBookmarkByUserId = async (bookmarkId: number): Promise<DeleteBookmarkByUserIdResponse> => {
     try {
-        await prisma.bookmarkTags.deleteMany({
-            where: {
-                bookmarkId,
-            },
-        });
-        await prisma.bookmark.delete({
+        const user = await getCurrentUser();
+
+        const result = await prisma.bookmark.deleteMany({
             where: {
                 id: bookmarkId,
-                userId,
-            },
+                userId: user.id
+            }
         });
 
-        return {
-            success: true,
+        if (result.count === 0) {
+            logger.warn({bookmarkId, userId: user.id}, "Delete Bookmark: Not Found or Unauthorized");
+            return {success: false, error: "Bookmark not found or unauthorized"};
         }
+
+        logger.info({bookmarkId, userId: user.id}, "Bookmark Deleted");
+        revalidatePath("/home");
+        return {success: true}
 
     } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return {
-                success: false, error: "Database error"
-            }
-        }
-
-        if (error instanceof Prisma.PrismaClientValidationError) {
-            return {
-                success: false, error: "Invalid data"
-            }
-        }
-
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        return {
-            success: false, error: errorMessage
-        }
-    } finally {
-        await prisma.$disconnect();
+        logger.error({err: error, bookmarkId}, "Delete Bookmark: Server Error");
+        return {success: false, error: "Failed to delete bookmark"};
     }
 }
 
-const toggleBookmarkFavorite = async (userId: string | undefined, bookmarkId: number, isFavorite: boolean) => {
-    if (!userId) {
-        return {
-            error: "User not found",
-            success: false,
-        }
-    }
-
-    const prisma = new PrismaClient();
-
+/**
+ * Toggles the 'isFavorite' status of a bookmark.
+ *
+ * @param bookmarkId - The ID of the bookmark to update.
+ * @param isFavorite - The new boolean state.
+ */
+export const toggleBookmarkFavorite = async (bookmarkId: number, isFavorite: boolean) => {
     try {
-        await prisma.bookmark.update({
+        const user = await getCurrentUser();
+
+        const result = await prisma.bookmark.updateMany({
+            where: {
+                id: bookmarkId,
+                userId: user.id,
+            },
             data: {
                 isFavorite
             },
-            where: {
-                userId,
-                id: bookmarkId,
-            },
         });
-        return {
-            success: true
+
+        if (result.count === 0) {
+            logger.warn({bookmarkId, userId: user.id}, "Toggle Favorite: Not Found or Unauthorized");
+            return {success: false, error: "Bookmark not found"}
         }
+
+        revalidatePath("/home");
+        return {success: true}
     } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return {
-                success: false, error: "Database error"
-            }
-        }
-
-        if (error instanceof Prisma.PrismaClientValidationError) {
-            return {
-                success: false, error: "Invalid data"
-            }
-        }
-
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        return {
-            success: false, error: errorMessage
-        }
-    } finally {
-        await prisma.$disconnect();
+        logger.error({err: error, bookmarkId}, "Toggle Favorite: Failed");
+        return {success: false, error: "Failed to update favorite status"}
     }
-
 }
-const bookmarkSchema = z.object({
-    title: z.string().max(255, "Title must be 255 characters or less").optional(),
-    url: z.string().url("Must be a valid URL"),
-    description: z.string().max(500, "Description must be 500 characters or less").optional(),
-    folderId: z.number().optional(),
-    imageURL: z.string().optional(),
-});
 
-const updateBookmark = async (formData: FormData, bookmarkId: number, userId: string, tags: Tag[]) => {
-    const prisma = new PrismaClient();
-    // TODO: remove this line
-    const t = tags;
-    t.push(...tags);
-
+/**
+ * Updates an existing bookmark.
+ *
+ * Handles concurrent updates to scalar fields (title, url) and relational fields (tags).
+ * Uses a Prisma transaction to ensure atomicity: if the tag update fails, the title update is reverted.
+ *
+ * @param formData - The raw FormData containing updated fields.
+ * @param bookmarkId - The ID of the bookmark to update.
+ */
+export const updateBookmark = async (formData: FormData, bookmarkId: number) => {
     try {
-        const rawData = {
-            title: formData.get("title")?.toString() || undefined,
-            url: formData.get("url")?.toString() || "",
-            description: formData.get("description")?.toString() || undefined,
-            folderId: formData.get("folderId")
-                ? Number(formData.get("folderId"))
-                : undefined,
-            tags: JSON.parse(formData.get("tags")?.toString() || "[]") as Tag[],
-            tagsModified: formData.get("tagsModified") === "true",
-        };
-        const rawTags: Tag[] = [];
+        const user = await getCurrentUser();
 
-        // only if the tags are present
-        if (rawData.tags.length > 0) {
-            rawTags.push(...rawData.tags);
-        }
+        const rawData = {
+            title: formData.get("title")?.toString(),
+            url: formData.get("url")?.toString(),
+            description: formData.get("description")?.toString(),
+            folderId: formData.get("folderId") ? Number(formData.get("folderId")) : undefined,
+            tags: JSON.parse(formData.get("tags")?.toString() || "[]"),
+        };
 
         const validatedData = bookmarkSchema.safeParse(rawData);
 
         if (!validatedData.success) {
             return {
                 success: false,
-                error: "Invalid bookmark data",
-                validationErrors: validatedData.error.flatten().fieldErrors,
-            }
+                error: "Invalid input",
+                validationErrors: validatedData.error.flatten().fieldErrors
+            };
         }
 
-        const existingBookmark = await prisma.bookmark.findFirst({
-            where: {
-                id: bookmarkId,
-                userId,
-            },
-        });
+        const {tags, ...dataToUpdate} = validatedData.data;
 
-        if (!existingBookmark) {
-            return { success: false, message: "Bookmark not found." };
-        }
-
-        await prisma.bookmark.update({
-            where: { id: bookmarkId },
-            data: {
-                ...(rawData.url && { url: rawData.url }),
-                ...(rawData.title !== null && { title: rawData.title }),
-                ...(rawData.description !== null && { description: rawData.description }),
-                ...(rawData.folderId !== undefined && { folderId: rawData.folderId }),
-            },
-        });
-
-        if (rawData.tagsModified) {
-            await prisma.bookmarkTags.deleteMany({
-                where: { bookmarkId }
+        await prisma.$transaction(async (tx) => {
+            const existing = await tx.bookmark.findFirst({
+                where: {id: bookmarkId, userId: user.id}
             });
 
-            if (rawData.tags.length > 0) {
-                await prisma.bookmarkTags.createMany({
-                    data: rawTags.map(tag => ({
-                        bookmarkId,
-                        tagId: tag.id,
-                    })),
-                });
-            }
-        }
+            if (!existing) throw new Error("Unauthorized");
 
+            await tx.bookmark.update({
+                where: {id: bookmarkId},
+                data: {
+                    ...dataToUpdate,
+                    url: dataToUpdate.url!
+                }
+            });
+
+            if (tags) {
+                await tx.bookmarkTags.deleteMany({where: {bookmarkId}});
+                if (tags.length > 0) {
+                    await tx.bookmarkTags.createMany({
+                        data: tags.map(tag => ({
+                            bookmarkId,
+                            tagId: tag.id
+                        }))
+                    });
+                }
+            }
+        });
+
+        logger.info({bookmarkId, userId: user.id}, "Bookmark Updated");
         revalidatePath("/home");
-        return { success: true, message: "Bookmark updated successfully." };
+        return {success: true, message: "Bookmark updated successfully."};
+
     } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return {
-                success: false, error: "Database error"
-            }
+        logger.error({err: error, bookmarkId}, "Update Bookmark: Failed");
+        if (error instanceof Error && error.message === "Unauthorized") {
+            return {success: false, error: "Unauthorized"};
         }
-
-        if (error instanceof Prisma.PrismaClientValidationError) {
-            return {
-                success: false, error: "Invalid data"
-            }
-        }
-
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        return {
-            success: false, error: errorMessage
-        }
-    } finally {
-        await prisma.$disconnect();
+        return {success: false, error: "Failed to update bookmark"};
     }
 }
-
-export { createBookmark, getBookmarksByUserId, deleteBookmarkByUserId, toggleBookmarkFavorite, updateBookmark };

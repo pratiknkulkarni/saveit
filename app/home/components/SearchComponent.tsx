@@ -16,7 +16,7 @@ import {AnimatePresence, motion} from "framer-motion";
 import {Badge} from "@/components/ui/badge";
 import {Separator} from "@/components/ui/separator";
 import {useRouter} from "next/navigation";
-import {MatchMode, Filter as FilterType} from "@/app/actions/enum";
+import {MatchMode, Filter as FilterType} from "@/app/actions/search_enum";
 
 const SearchFilters = [
     {label: "Titles", value: "title"},

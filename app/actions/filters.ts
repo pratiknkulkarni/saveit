@@ -1,8 +1,9 @@
 "use server"
 
-import { Prisma, PrismaClient } from "@prisma/client";
+import {prisma} from "@/lib/prisma";
+import {getCurrentUser} from "@/lib/auth-server";
+import {logger} from "@/lib/logger";
 
-// TODO: extract this out
 export type FilteredBookmark = {
     id: number;
     url: string;
@@ -23,20 +24,29 @@ export type GetFilteredBookmarksResponse = {
     error?: string;
 };
 
-const getFilteredBookmarks = async ({ folderId, tagIds }: {
+export const getFilteredBookmarks = async ({folderId, tagIds}: {
     folderId?: number;
     tagIds?: number[]
 }): Promise<GetFilteredBookmarksResponse> => {
-    const prisma = new PrismaClient();
-
     try {
+        const user = await getCurrentUser();
+
         if (!folderId && (!tagIds || tagIds.length === 0)) {
-            return { success: false, error: "Invalid parameters", data: [] };
+            return {success: false, error: "Invalid parameters", data: []};
         }
 
         const bookmarks = await prisma.bookmark.findMany({
             where: {
-                folderId: folderId || undefined,
+                userId: user.id,
+
+                ...(folderId ? {folderId} : {}),
+                ...(tagIds && tagIds.length > 0 ? {
+                    AND: tagIds.map(tagId => ({
+                        BookmarkTags: {
+                            some: {tagId}
+                        }
+                    }))
+                } : {})
             },
             select: {
                 id: true,
@@ -52,55 +62,26 @@ const getFilteredBookmarks = async ({ folderId, tagIds }: {
                 BookmarkTags: {
                     select: {
                         tagId: true,
-                        tag: {
-                            select: {
-                                name: true,
-                            },
-                        },
+                        tag: {select: {name: true}},
                     },
                 },
             },
+            orderBy: {createdAt: 'desc'}
         });
 
-        // only run if the tags are selected, but if folders are selected, skip
-        if (tagIds) {
-            const filteredBookmarks = bookmarks.filter(
-                (bookmark) =>
-                    tagIds &&
-                    tagIds.every((tagId) =>
-                        bookmark.BookmarkTags.some((bt) => bt.tagId === tagId)
-                    )
-            );
-            return {
-                success: true,
-                data: filteredBookmarks.map((bookmark) => ({
-                    ...bookmark,
-                    tags: bookmark.BookmarkTags.map(({ tagId, tag }) => ({
-                        id: tagId,
-                        name: tag.name,
-                    })),
-                })),
-            };
-        }
-
-        return {
-            success: true,
-            data: bookmarks.map((bookmark) => ({
-                ...bookmark,
-                tags: bookmark.BookmarkTags.map(({ tagId, tag }) => ({
-                    id: tagId,
-                    name: tag.name,
-                })),
+        const formatted = bookmarks.map((bookmark) => ({
+            ...bookmark,
+            tags: bookmark.BookmarkTags.map(({tagId, tag}) => ({
+                id: tagId,
+                name: tag.name,
             })),
-        };
+        }));
+
+        logger.info({userId: user.id, count: formatted.length, folderId}, "Filtered Bookmarks Fetched");
+        return {success: true, data: formatted};
+
     } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return { success: false, error: "Database error", data: [] };
-        }
-        return { success: false, error: "Unknown error", data: [] };
-    } finally {
-        await prisma.$disconnect();
+        logger.error({err: error, userId: "unknown"}, "Get Filtered Bookmarks: Failed");
+        return {success: false, error: "Failed to fetch data", data: []};
     }
 };
-
-export { getFilteredBookmarks }

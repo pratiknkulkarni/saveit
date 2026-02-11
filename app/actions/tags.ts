@@ -1,58 +1,77 @@
 "use server"
 
-import {Prisma, PrismaClient} from "@prisma/client";
+import {revalidatePath} from "next/cache";
+import {prisma} from "@/lib/prisma";
+import {getCurrentUser} from "@/lib/auth-server";
+import {logger} from "@/lib/logger";
+import {Prisma} from "@prisma/client";
 import {
-    CreateTagsResponse, DeleteTagResponse,
+    createTagsSchema,
+    deleteTagSchema,
+    updateTagSchema
+} from "@/app/actions/schema/tag";
+import {
+    CreateTagsResponse,
+    DeleteTagResponse,
     GetFormattedTagsForBookmarksResponse,
     GetTagsForBookmarkResponse,
-    GetUserTagsResponse, UpdateTagResponse,
+    GetUserTagsResponse,
+    UpdateTagResponse,
 } from "@/app/actions/types";
-import {revalidatePath} from "next/cache";
 
-
-const getTagsForBookmark = async (bookmarkId: number): Promise<GetTagsForBookmarkResponse> => {
-    const prisma = new PrismaClient();
-
+/**
+ * Retrieves tags for a specific bookmark.
+ * Security: Ensures the bookmark belongs to the current user.
+ */
+export const getTagsForBookmark = async (bookmarkId: number): Promise<GetTagsForBookmarkResponse> => {
     try {
-        const tags = await prisma.bookmarkTags.findMany({
-            where: {
-                bookmarkId
-            },
+        const user = await getCurrentUser();
+
+        const bookmark = await prisma.bookmark.findFirst({
+            where: {id: bookmarkId, userId: user.id},
             include: {
-                tag: true,
-            },
-            orderBy: {
-                bookmarkId: "asc",
-            },
+                BookmarkTags: {
+                    include: {tag: true},
+                    orderBy: {tag: {name: 'asc'}}
+                }
+            }
         });
-        return {success: true, data: tags};
-    } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return {success: false, error: "Database error"};
+
+        if (!bookmark) {
+            return {success: false, error: "Bookmark not found or unauthorized"};
         }
-        return {success: false, error: "Unknown error"};
-    } finally {
-        await prisma.$disconnect();
+
+        return {success: true, data: bookmark.BookmarkTags};
+
+    } catch (error) {
+        logger.error({err: error, bookmarkId}, "Get Tags For Bookmark: Failed");
+        return {success: false, error: "Failed to fetch tags"};
     }
 }
 
-const getFormattedTagsForBookmarks = async (bookmarkIds: number[]): Promise<GetFormattedTagsForBookmarksResponse> => {
-    const prisma = new PrismaClient();
-
+/**
+ * Retrieves formatted tags for a list of bookmarks.
+ * Used primarily for the list view to show pills on bookmark cards.
+ * Security: Filters by userId to prevent data leakage.
+ */
+export const getFormattedTagsForBookmarks = async (bookmarkIds: number[]): Promise<GetFormattedTagsForBookmarksResponse> => {
     if (!bookmarkIds.length) {
         return {success: true, data: []};
     }
 
     try {
+        const user = await getCurrentUser();
+
         const tags = await prisma.bookmarkTags.findMany({
             where: {
                 bookmarkId: {in: bookmarkIds},
+                bookmark: {userId: user.id} // Security Check
             },
             include: {
                 tag: true,
             },
             orderBy: {
-                bookmarkId: "asc",
+                tag: {name: 'asc'}
             },
         });
 
@@ -64,190 +83,162 @@ const getFormattedTagsForBookmarks = async (bookmarkIds: number[]): Promise<GetF
         }));
 
         return {success: true, data: groupedTags};
+
     } catch (error) {
-        console.log(error);
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return {success: false, error: "Database error"};
-        }
-        return {success: false, error: "Unknown error"};
-    } finally {
-        await prisma.$disconnect();
+        logger.error({err: error, count: bookmarkIds.length}, "Get Formatted Tags: Failed");
+        return {success: false, error: "Failed to fetch tags"};
     }
 }
 
-const getUserTags = async ({userId}: { userId: string | undefined }): Promise<GetUserTagsResponse> => {
-    const prisma = new PrismaClient();
-
+/**
+ * Retrieves all tags created by the authenticated user.
+ */
+export const getUserTags = async (): Promise<GetUserTagsResponse> => {
     try {
-        if (!userId) {
-            return {success: false, error: "User not found"}
-        }
+        const user = await getCurrentUser();
+
         const tags = await prisma.tag.findMany({
-            where: {
-                userId,
-            }, select: {
-                id: true,
-                name: true,
-            }
+            where: {userId: user.id},
+            select: {id: true, name: true},
+            orderBy: {name: 'asc'}
         });
 
-        if (tags.length === 0) {
-            return {success: true, data: []}
-        }
-
         return {success: true, data: tags};
+
     } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return {success: false, error: "Database error"}
-        }
-        return {success: false, error: "Unknown error"}
-    } finally {
-        await prisma.$disconnect()
+        logger.error({err: error}, "Get User Tags: Failed");
+        return {success: false, error: "Failed to fetch tags"};
     }
 }
 
-const createNewTags = async ({tags, userId}: {
-    tags: string[],
-    userId: string | undefined
-}): Promise<CreateTagsResponse> => {
-    const prisma = new PrismaClient();
+/**
+ * Creates new tags. Checks for duplicates first.
+ */
+export const createNewTags = async ({tags}: { tags: string[] }): Promise<CreateTagsResponse> => {
     try {
-        if (!userId) {
-            return {
-                success: false,
-                error: "User not found"
-            }
-        }
+        const user = await getCurrentUser();
+
+        const validated = createTagsSchema.safeParse({tags});
+        if (!validated.success) return {success: false, error: "Invalid tag names"};
+
+        const tagNames = validated.data.tags;
 
         const existingTags = await prisma.tag.findMany({
             where: {
-                userId,
-                name: {
-                    in: tags,
-                }
-            }, select: {
-                name: true,
-            }
+                userId: user.id,
+                name: {in: tagNames},
+            },
+            select: {name: true}
         });
 
         if (existingTags.length > 0) {
             const duplicateTags = existingTags.map(tag => tag.name);
+            logger.warn({userId: user.id, duplicateTags}, "Create Tags: Duplicates found");
             return {
                 success: false,
-                error: `Tag${duplicateTags.length > 1 ? 's' : ''} "${duplicateTags.join('", "')}" already exist`,
+                error: `Tag(s) already exist`,
                 duplicateTags,
             }
         }
 
-        const tagsData = tags.map((tagName) => ({
-            name: tagName,
-            userId,
-        }));
+        const count = await prisma.tag.createMany({
+            data: tagNames.map((name) => ({
+                name,
+                userId: user.id,
+            })),
+        });
 
-        try {
-            const response = await prisma.tag.createMany({
-                data: tagsData,
+        logger.info({userId: user.id, count: count.count}, "Tags Created");
+        revalidatePath("/home");
+        return {success: true, data: count.count};
+
+    } catch (error) {
+        logger.error({err: error}, "Create Tags: Failed");
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            return {success: false, error: "Tag(s) already present"}
+        }
+        return {success: false, error: "Failed to create tags"}
+    }
+}
+
+/**
+ * Deletes a tag and removes it from all associated bookmarks.
+ */
+export const deleteTag = async ({tagId}: { tagId: number }): Promise<DeleteTagResponse> => {
+    try {
+        const user = await getCurrentUser();
+
+        const validated = deleteTagSchema.safeParse({tagId});
+        if (!validated.success) return {success: false, error: "Invalid tag ID"};
+
+        await prisma.$transaction(async (tx) => {
+            const tag = await tx.tag.findFirst({
+                where: {id: tagId, userId: user.id}
             });
 
-            revalidatePath("/home");
-            return {success: true, data: response.count};
-        } catch (error) {
-            if (error instanceof Prisma.PrismaClientKnownRequestError) {
-                if (error.code === 'P2002') {
-                    return {success: false, error: "Tag(s) already present"}
-                }
-                return {success: false, error: error.message}
-            }
-            return {success: false, error: "Error creating tags"}
-        }
-    } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return {success: false, error: "Database error"}
-        }
-        return {success: false, error: "Unknown error"}
-    } finally {
-        await prisma.$disconnect()
-    }
-}
+            if (!tag) throw new Error("Unauthorized");
 
+            await tx.bookmarkTags.deleteMany({
+                where: {tagId}
+            });
 
-const deleteTag = async ({tagId, userId}: {
-    tagId: number,
-    userId: string | undefined
-}): Promise<DeleteTagResponse> => {
-    const prisma = new PrismaClient();
-
-    try {
-        if (!userId) {
-            return {success: false, error: "User not found"}
-        }
-
-        await prisma.bookmarkTags.deleteMany({
-            where: {
-                tagId,
-            }
+            await tx.tag.delete({
+                where: {id: tagId}
+            });
         });
 
-        await prisma.tag.delete({
-            where: {
-                id: tagId,
-            },
-            select: {
-                id: true
-            }
-        });
-
+        logger.info({userId: user.id, tagId}, "Tag Deleted");
+        revalidatePath("/home");
         return {success: true};
+
     } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            return {success: false, error: "Database error"}
+        logger.error({err: error, tagId}, "Delete Tag: Failed");
+        if (error instanceof Error && error.message === "Unauthorized") {
+            return {success: false, error: "Tag not found or unauthorized"};
         }
-        return {success: false, error: "Unknown error"}
-    } finally {
-        await prisma.$disconnect()
+        return {success: false, error: "Failed to delete tag"}
     }
 }
 
-
-const updateTag = async ({
-                             tagId,
-                             newTagName,
-                             userId
-                         }: {
+/**
+ * Updates a tag's name.
+ */
+export const updateTag = async ({
+                                    tagId,
+                                    newTagName,
+                                }: {
     tagId: number,
     newTagName: string,
-    userId: string | undefined
 }): Promise<UpdateTagResponse> => {
-    const prisma = new PrismaClient();
-
     try {
-        if (!userId) {
-            return {success: false, error: "User not found"}
-        }
+        const user = await getCurrentUser();
 
-        await prisma.tag.update({
+        const validated = updateTagSchema.safeParse({tagId, newTagName});
+        if (!validated.success) return {success: false, error: "Invalid input"};
+
+        const result = await prisma.tag.updateMany({
             where: {
                 id: tagId,
-                userId: userId,
+                userId: user.id,
             },
             data: {
-                name: newTagName,
+                name: validated.data.newTagName,
             }
         });
 
-        return {success: true};
-    } catch (error) {
-        if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            if (error.code === 'P2002') {
-                return {success: false, error: "Tag with this name already exists."}
-            }
-            return {success: false, error: "Database error"}
+        if (result.count === 0) {
+            return {success: false, error: "Tag not found or unauthorized"};
         }
 
-        return {success: false, error: "Unknown error"}
-    } finally {
-        await prisma.$disconnect()
+        logger.info({userId: user.id, tagId}, "Tag Updated");
+        revalidatePath("/home");
+        return {success: true};
+
+    } catch (error) {
+        logger.error({err: error, tagId}, "Update Tag: Failed");
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+            return {success: false, error: "Tag with this name already exists."}
+        }
+        return {success: false, error: "Failed to update tag"}
     }
 }
-
-export {createNewTags, getUserTags, getFormattedTagsForBookmarks, getTagsForBookmark, deleteTag, updateTag}

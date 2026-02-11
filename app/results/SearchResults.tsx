@@ -4,7 +4,7 @@ import {useRouter, useSearchParams} from "next/navigation";
 import {Skeleton} from "@/components/ui/skeleton";
 import {ArrowLeft, SearchX} from "lucide-react";
 import {authClient} from "@/lib/auth-client";
-import {Filter, MatchMode} from "../actions/enum";
+import {Filter, MatchMode} from "../actions/search_enum";
 import SearchSection from "./components/SearchSection";
 import {useSearchResultsQuery} from "@/hooks/use-search-results";
 import {useScroll} from "@/app/context/RefContext";
