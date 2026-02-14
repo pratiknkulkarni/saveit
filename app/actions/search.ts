@@ -1,184 +1,118 @@
 "use server"
 
-import {Bookmark, Folder, PrismaClient, Tag} from "@prisma/client";
-import MiniSearch, {SearchResult} from "minisearch";
+import {prisma} from "@/lib/prisma";
+import {getCurrentUser} from "@/lib/auth-server";
+import {logger} from "@/lib/logger";
 import {Filter, MatchMode} from "@/app/actions/search_enum";
 
-const searchBookmarks = async (searchTerm: string, userId: string | undefined) => {
-    const searchFields = ["title", "url", "description", "tags"];
-    if (!userId) {
-        return []
-    }
-
-    const prisma = new PrismaClient();
-
-    if (!searchTerm) {
-        return []
-    }
-
-    const bookmarks = await prisma.bookmark.findMany({
-        where: {
-            userId,
-        }
-    });
-
-    const miniSearch = new MiniSearch({
-        fields: searchFields,
-        storeFields: ['id', 'title', 'url', 'tags', 'description'],
-        searchOptions: {
-            prefix: true,
-            fuzzy: 0.2,
-        },
-    });
-
-    miniSearch.addAll(bookmarks);
-
-    const results = miniSearch.search(searchTerm);
-    console.log(results);
-
-    return results;
-}
-
-// this HAS TO crash if number of bookmark are huge
-// TODO: I need to ensure it doesn't.
-const searchAll = async (
-    searchTerm: string | undefined,
-    userId: string | undefined,
-    filter?: Filter,
-    matchMode?: MatchMode
-): Promise<SearchResult[]> => {
-    if (!userId || !searchTerm) return [];
-
-    const prisma = new PrismaClient();
-
-    let folders: Folder[] = [];
-    let tags: Tag[] = [];
-    let bookmarks: Bookmark[] = [];
-
-    // bookmark
-    if (filter === "title" || filter === "all" || filter === "description" || filter === "url") {
-        bookmarks = await prisma.bookmark.findMany({
-            where: {
-                userId
-            }
-        })
-    }
-
-    // folder
-    if (filter === "folder" || filter === "all") {
-        folders = await prisma.folder.findMany({where: {userId}});
-    }
-
-    // tag
-    if (filter === "tag" || filter === "all") {
-        tags = await prisma.tag.findMany({where: {userId}});
-    }
-
-    // combining the data to put it all in the minisearch
-    const documents = [
-        ...bookmarks.map((b) => ({
-            id: `bookmark-${b.id}`,
-            type: "bookmark",
-            title: b.title || "",
-            url: b.url,
-            description: b.description || "",
-            folder: "",
-            tags: "",
-        })),
-        ...folders.map((f) => ({
-            id: `folder-${f.id}`,
-            type: "folder",
-            title: "Folders",
-            url: "",
-            description: "",
-            folder: f.name,
-            tags: "",
-        })),
-        ...tags.map((t) => ({
-            id: `tag-${t.id}`,
-            type: "tag",
-            title: "Tags",
-            url: "",
-            description: "",
-            folder: "",
-            tags: t.name,
-        })),
-    ];
-
-    let searchFields = ["title", "url", "description", "folder", "tags"];
-
-    if (filter) {
-        switch (filter) {
-            case "title":
-                searchFields = ["title"];
-                break;
-            case "description":
-                searchFields = ["description"];
-                break;
-            case "url":
-                searchFields = ["url"];
-                break;
-            case "tag":
-                searchFields = ["tags"];
-                break;
-            case "folder":
-                searchFields = ["folder"];
-                break;
-            default:
-                break;
-        }
-    }
-
-    let searchOptions = {};
-
-    switch (matchMode) {
-        case "exact":
-            searchOptions = {fuzzy: false};
-            break;
-        case "fuzzy":
-            searchOptions = {fuzzy: 0.2, prefix: false};
-            break;
-        case "loose":
-            searchOptions = {fuzzy: 0.4, prefix: false};
-            break;
-        case "startsWith":
-            searchOptions = {prefix: true, fuzzy: false};
-            break;
-        // case "contains":
-        //     searchOptions = {fuzzy: 0.3, prefix: true};
-        //     break;
-        default:
-            searchOptions = {fuzzy: 0.2};
-    }
-
-    const miniSearch = new MiniSearch({
-        fields: searchFields,
-        storeFields: ["id", "type", "title", "url", "description", "folder", "tags"],
-        searchOptions,
-    });
-
-    miniSearch.addAll(documents);
-
-    const entityMatch = searchTerm.match(/^(bookmark|folder|tag):\s*(.*)/i);
-
-    let results;
-
-    if (entityMatch) {
-        const [, entityType, term] = entityMatch;
-        results = miniSearch.search(term, {
-            filter: (doc) => doc.type === entityType.toLowerCase(),
-        });
-    } else {
-        results = miniSearch.search(searchTerm);
-    }
-    console.log(results);
-
-    const enrichedResults = results.map((res) => ({
-        ...res,
-        match: res.match,
-    }));
-
-    return enrichedResults;
+type SearchResult = {
+    id: number;
+    type: string;
+    title: string;
+    description: string;
+    url: string;
+    rank: number;
 };
 
-export {searchBookmarks, searchAll}
+export const searchAll = async (
+    searchTerm: string | undefined,
+    filter: Filter = "all",
+    matchMode: MatchMode = "fuzzy"
+) => {
+    try {
+        const user = await getCurrentUser();
+
+        if (!searchTerm || searchTerm.trim().length === 0) return [];
+
+        const query = searchTerm.trim();
+        let sqlQuery;
+
+        if (matchMode === "exact") {
+            // EXACT
+            sqlQuery = prisma.$queryRaw<SearchResult[]>`
+                SELECT id, 'bookmark' as type, title, description, url, 1 as rank
+                FROM "Bookmark"
+                WHERE "userId" = ${user.id}
+                  AND (
+                    (${filter} IN ('all', 'title') AND title ILIKE ${query}) OR
+                    (${filter} IN ('all', 'description') AND description ILIKE ${query}) OR
+                    (${filter} IN ('all', 'url') AND url ILIKE ${query})
+                    )
+                LIMIT 50;
+            `;
+        } else if (matchMode === "startsWith") {
+            // STARTS WITH
+            sqlQuery = prisma.$queryRaw<SearchResult[]>`
+                SELECT id, 'bookmark' as type, title, description, url, 1 as rank
+                FROM "Bookmark"
+                WHERE "userId" = ${user.id}
+                  AND (
+                    (${filter} IN ('all', 'title') AND title ILIKE ${query + '%'}) OR
+                    (${filter} IN ('all', 'description') AND description ILIKE ${query + '%'}) OR
+                    (${filter} IN ('all', 'url') AND url ILIKE ${query + '%'})
+                    )
+                LIMIT 50;
+            `;
+        } else {
+            // FUZZY / LOOSE
+            // FIX: Switched from similarity() to word_similarity(query, column)
+            // This finds the best matching *substring* within the text.
+            sqlQuery = prisma.$queryRaw<SearchResult[]>`
+                SELECT id,
+                       'bookmark' as type,
+                       title,
+                       description,
+                       url,
+                       -- Rank by the best word match
+                       GREATEST(
+                               word_similarity(${query}, title),
+                               word_similarity(${query}, description),
+                               word_similarity(${query}, url)
+                       )          as rank
+                FROM "Bookmark"
+                WHERE "userId" = ${user.id}
+                  AND (
+                    -- Fuzzy Word Similarity
+                    (
+                        word_similarity(${query}, title) > 0.2 OR
+                        word_similarity(${query}, description) > 0.2 OR
+                        word_similarity(${query}, url) > 0.2
+                        )
+                        OR
+                        -- Partial Match Fallback
+                    (
+                        title ILIKE ${`%${query}%`} OR
+                        description ILIKE ${`%${query}%`} OR
+                        url ILIKE ${`%${query}%`}
+                        )
+                    )
+                ORDER BY rank DESC
+                LIMIT 50;
+            `;
+        }
+
+        const results = await sqlQuery;
+
+        const formatted = results.map(row => ({
+            id: `bookmark-${row.id}`,
+            type: "bookmark",
+            title: row.title || row.url,
+            description: row.description,
+            url: row.url,
+            match: row.rank
+        }));
+
+        logger.info({
+            userId: user.id,
+            query,
+            matchMode,
+            count: formatted.length
+        }, "Search Performed");
+
+        return formatted;
+
+    } catch (error) {
+        logger.error({err: error}, "Search Failed");
+        return [];
+    }
+}
