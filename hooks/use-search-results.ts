@@ -13,5 +13,7 @@ export const useSearchResultsQuery = (
         queryKey: [QUERY_KEYS.useSearchResultsQueryKey, searchTerm, filter, matchMode],
         queryFn: () => searchAll(searchTerm, filter, matchMode),
         enabled: !!searchTerm && searchTerm.length > 0 && !!userId,
+        refetchOnWindowFocus: false,
+        staleTime: 1000 * 60 * 5
     });
 }

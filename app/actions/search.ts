@@ -5,12 +5,14 @@ import {getCurrentUser} from "@/lib/auth-server";
 import {logger} from "@/lib/logger";
 import {Filter, MatchMode} from "@/app/actions/search_enum";
 
-type SearchResult = {
+type RawSearchResult = {
     id: number;
-    type: string;
+    type: 'bookmark' | 'folder' | 'tag';
     title: string;
     description: string;
     url: string;
+    folder: string | null;
+    tags: string | null;
     rank: number;
 };
 
@@ -21,91 +23,144 @@ export const searchAll = async (
 ) => {
     try {
         const user = await getCurrentUser();
-
         if (!searchTerm || searchTerm.trim().length === 0) return [];
-
         const query = searchTerm.trim();
-        let sqlQuery;
 
-        if (matchMode === "exact") {
-            // EXACT
-            sqlQuery = prisma.$queryRaw<SearchResult[]>`
-                SELECT id, 'bookmark' as type, title, description, url, 1 as rank
-                FROM "Bookmark"
-                WHERE "userId" = ${user.id}
-                  AND (
-                    (${filter} IN ('all', 'title') AND title ILIKE ${query}) OR
-                    (${filter} IN ('all', 'description') AND description ILIKE ${query}) OR
-                    (${filter} IN ('all', 'url') AND url ILIKE ${query})
-                    )
-                LIMIT 50;
+        const threshold = matchMode === "loose" ? 0.5 : 0.7;
+        const isFuzzy = matchMode === "fuzzy" || matchMode === "loose";
+        const isExact = matchMode === "exact";
+        const isStart = matchMode === "startsWith";
+
+        const shouldQueryBookmarks = ['all', 'title', 'description', 'url'].includes(filter);
+        const shouldQueryFolders = ['all', 'folder'].includes(filter);
+        const shouldQueryTags = ['all', 'tag'].includes(filter);
+
+        const searchTitle = ['all', 'title'].includes(filter);
+        const searchDesc = ['all', 'description'].includes(filter);
+        const searchUrl = ['all', 'url'].includes(filter);
+        const searchFolderMeta = filter === 'all';
+        const searchTagMeta = filter === 'all';
+
+        const textMatch = (col: string) => {
+            if (isExact) return `${col} ILIKE '${query}'`;
+            if (isStart) return `${col} ILIKE '${query}%'`;
+            return `(word_similarity('${query}', ${col}) > ${threshold} OR ${col} ILIKE '%${query}%')`;
+        };
+
+        const rankCalc = (col: string) => {
+            if (!isFuzzy) return "1";
+            return `word_similarity('${query}', ${col})`;
+        };
+
+        const promises = [];
+
+        // =========================================================
+        // QUERY 1: BOOKMARKS
+        // =========================================================
+        if (shouldQueryBookmarks) {
+            const bookmarkSQL = `
+                WITH MatchingIds AS (SELECT b.id,
+                                            GREATEST(
+                                                    ${rankCalc('b.title')},
+                                                    ${rankCalc('b.description')},
+                                                    ${rankCalc('b.url')}
+                                            ) as rank
+                                     FROM "Bookmark" b
+                                              LEFT JOIN "Folder" f ON b."folderId" = f.id
+                                              LEFT JOIN "BookmarkTags" bt ON b.id = bt."bookmarkId"
+                                              LEFT JOIN "Tag" t ON bt."tagId" = t.id
+                                     WHERE b."userId" = '${user.id}'
+                                       AND (
+                                         (${searchTitle} AND ${textMatch('b.title')}) OR
+                                         (${searchDesc} AND ${textMatch('b.description')}) OR
+                                         (${searchUrl} AND ${textMatch('b.url')}) OR
+                                         (${searchFolderMeta} AND f.name IS NOT NULL AND ${textMatch('f.name')}) OR
+                                         (${searchTagMeta} AND t.name IS NOT NULL AND ${textMatch('t.name')})
+                                         )
+                                     GROUP BY b.id
+                                     ORDER BY rank DESC
+                                     LIMIT 50)
+                SELECT b.id,
+                       'bookmark'              as type,
+                       b.title,
+                       b.description,
+                       b.url,
+                       f.name                  as folder,
+                       STRING_AGG(t.name, ',') as tags,
+                       m.rank
+                FROM MatchingIds m
+                         JOIN "Bookmark" b ON m.id = b.id
+                         LEFT JOIN "Folder" f ON b."folderId" = f.id
+                         LEFT JOIN "BookmarkTags" bt ON b.id = bt."bookmarkId"
+                         LEFT JOIN "Tag" t ON bt."tagId" = t.id
+                GROUP BY b.id, f.name, m.rank
+                ORDER BY m.rank DESC
             `;
-        } else if (matchMode === "startsWith") {
-            // STARTS WITH
-            sqlQuery = prisma.$queryRaw<SearchResult[]>`
-                SELECT id, 'bookmark' as type, title, description, url, 1 as rank
-                FROM "Bookmark"
-                WHERE "userId" = ${user.id}
-                  AND (
-                    (${filter} IN ('all', 'title') AND title ILIKE ${query + '%'}) OR
-                    (${filter} IN ('all', 'description') AND description ILIKE ${query + '%'}) OR
-                    (${filter} IN ('all', 'url') AND url ILIKE ${query + '%'})
-                    )
-                LIMIT 50;
-            `;
-        } else {
-            // FUZZY / LOOSE
-            // FIX: Switched from similarity() to word_similarity(query, column)
-            // This finds the best matching *substring* within the text.
-            sqlQuery = prisma.$queryRaw<SearchResult[]>`
-                SELECT id,
-                       'bookmark' as type,
-                       title,
-                       description,
-                       url,
-                       -- Rank by the best word match
-                       GREATEST(
-                               word_similarity(${query}, title),
-                               word_similarity(${query}, description),
-                               word_similarity(${query}, url)
-                       )          as rank
-                FROM "Bookmark"
-                WHERE "userId" = ${user.id}
-                  AND (
-                    -- Fuzzy Word Similarity
-                    (
-                        word_similarity(${query}, title) > 0.2 OR
-                        word_similarity(${query}, description) > 0.2 OR
-                        word_similarity(${query}, url) > 0.2
-                        )
-                        OR
-                        -- Partial Match Fallback
-                    (
-                        title ILIKE ${`%${query}%`} OR
-                        description ILIKE ${`%${query}%`} OR
-                        url ILIKE ${`%${query}%`}
-                        )
-                    )
-                ORDER BY rank DESC
-                LIMIT 50;
-            `;
+            promises.push(prisma.$queryRawUnsafe<RawSearchResult[]>(bookmarkSQL));
         }
 
-        const results = await sqlQuery;
+        // =========================================================
+        // QUERY 2: FOLDERS
+        // =========================================================
+        if (shouldQueryFolders) {
+            const folderSQL = `
+                SELECT id,
+                       'folder'            as type,
+                       name                as title,
+                       ''                  as description,
+                       ''                  as url,
+                       ''                  as folder,
+                       ''                  as tags,
+                       ${rankCalc('name')} as rank
+                FROM "Folder"
+                WHERE "userId" = '${user.id}'
+                  AND ${textMatch('name')}
+                LIMIT 20
+            `;
+            promises.push(prisma.$queryRawUnsafe<RawSearchResult[]>(folderSQL));
+        }
 
-        const formatted = results.map(row => ({
-            id: `bookmark-${row.id}`,
-            type: "bookmark",
-            title: row.title || row.url,
-            description: row.description,
-            url: row.url,
-            match: row.rank
-        }));
+        // =========================================================
+        // QUERY 3: TAGS
+        // =========================================================
+        if (shouldQueryTags) {
+            const tagSQL = `
+                SELECT id,
+                       'tag'               as type,
+                       name                as title,
+                       ''                  as description,
+                       ''                  as url,
+                       ''                  as folder,
+                       ''                  as tags,
+                       ${rankCalc('name')} as rank
+                FROM "Tag"
+                WHERE "userId" = '${user.id}'
+                  AND ${textMatch('name')}
+                LIMIT 20
+            `;
+            promises.push(prisma.$queryRawUnsafe<RawSearchResult[]>(tagSQL));
+        }
+
+        const results = await Promise.all(promises);
+        const flatResults = results.flat();
+
+        const formatted = flatResults
+            .sort((a, b) => b.rank - a.rank)
+            .map(row => ({
+                id: `${row.type}-${row.id}`,
+                type: row.type,
+                title: row.title,
+                description: row.description,
+                url: row.url,
+                match: row.rank,
+                folder: row.folder || undefined,
+                tags: row.tags || undefined
+            }));
 
         logger.info({
             userId: user.id,
             query,
-            matchMode,
+            filter,
             count: formatted.length
         }, "Search Performed");
 

@@ -32,6 +32,12 @@ const SearchResults = () => {
         error,
     } = useSearchResultsQuery(searchTerm, filter, matchMode, session?.user?.id);
 
+    // const groupedResults = {
+    //     tag: searchResults.filter((res) => res.type === "tag"),
+    //     folder: searchResults.filter((res) => res.type === "folder"),
+    //     bookmark: searchResults.filter((res) => res.type === "bookmark"),
+    // };
+
     const groupedResults = {
         tag: searchResults.filter((res) => res.type === "tag"),
         folder: searchResults.filter((res) => res.type === "folder"),
@@ -58,11 +64,37 @@ const SearchResults = () => {
                 </div>
             ) : (
                 <>
-                    <SearchSection ref={refs.firstRef} title="Tags" items={groupedResults.tag} type="tag"/>
-                    <SearchSection ref={refs.secondRef} title="Folders" items={groupedResults.folder} type="folder"/>
-                    <SearchSection ref={refs.thirdRef} title="Bookmarks" items={groupedResults.bookmark}
-                                   type="bookmark"
-                                   includeActions/>
+                    <SearchSection
+                        ref={refs.firstRef}
+                        title="Tags"
+                        items={groupedResults.tag}
+                        type="tag"
+                        searchTerm={searchTerm}
+                        matchMode={matchMode}
+                    />
+                    <SearchSection
+                        ref={refs.secondRef}
+                        title="Folders"
+                        items={groupedResults.folder}
+                        type="folder"
+                        searchTerm={searchTerm}
+                        matchMode={matchMode}
+                    />
+                    <SearchSection
+                        ref={refs.thirdRef}
+                        title="Bookmarks"
+                        items={groupedResults.bookmark}
+                        type="bookmark"
+                        includeActions
+                        searchTerm={searchTerm}
+                        matchMode={matchMode}
+                    />
+
+                    {/*<SearchSection ref={refs.firstRef} title="Tags" items={groupedResults.tag} type="tag"/>*/}
+                    {/*<SearchSection ref={refs.secondRef} title="Folders" items={groupedResults.folder} type="folder"/>*/}
+                    {/*<SearchSection ref={refs.thirdRef} title="Bookmarks" items={groupedResults.bookmark}*/}
+                    {/*               type="bookmark"*/}
+                    {/*               includeActions/>*/}
                 </>
             )}
             {isError && (

@@ -1,20 +1,34 @@
 import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
 import {Badge, Folder, Link, Tag} from "lucide-react";
 import HighlightText from "@/app/results/components/HighlightText";
-import {getMatchedTerms} from "@/lib/getMatchedTerms";
+import {getMatchedTerms} from "@/lib/search-highlight";
+import {getSmartSnippet} from "@/lib/smart-snippet";
 import SearchResultsBookmarkActions from "./SearchResultsBookmarkActions";
-import {SearchResult} from "minisearch";
 import React, {RefObject} from "react";
+import {MatchMode} from "@/app/actions/search_enum";
+
+type SearchResultItem = {
+    id: string;
+    type: string;
+    title: string;
+    description: string;
+    url: string;
+    match: number;
+    tags?: string;
+    folder?: string;
+};
 
 type SearchSectionProps = {
     title: string;
-    items: SearchResult[];
+    items: SearchResultItem[];
     type: "tag" | "folder" | "bookmark";
     includeActions?: boolean;
     ref: RefObject<HTMLDivElement | null>;
+    searchTerm: string;
+    matchMode: MatchMode;
 }
 
-const SearchSection = ({title, items, type, ref}: SearchSectionProps) => (
+const SearchSection = ({title, items, type, ref, searchTerm, matchMode}: SearchSectionProps) => (
     <div className="mb-8" ref={ref}>
         <h2 className="text-xl font-semibold border-b pb-2 mb-4">{title}</h2>
 
@@ -25,14 +39,22 @@ const SearchSection = ({title, items, type, ref}: SearchSectionProps) => (
                 {items.map((item) => (
                     <Card key={item.id}>
                         <CardHeader>
-                            <CardTitle>{item.title || (type === "tag" ? item.tags : item.folder)}</CardTitle>
+                            <CardTitle>
+                                {item.title
+                                    ? HighlightText(item.title, getMatchedTerms(item.title, searchTerm, matchMode))
+                                    : (type === "tag" ? item.tags : item.folder)
+                                }
+                            </CardTitle>
                         </CardHeader>
                         <CardContent>
                             {type === "bookmark" && (
                                 <>
                                     {item.description && (
                                         <p className="text-sm text-gray-500">
-                                            {HighlightText(item.description, getMatchedTerms(item, "description"))}
+                                            {HighlightText(
+                                                getSmartSnippet(item.description, searchTerm, matchMode),
+                                                getMatchedTerms(item.description, searchTerm, matchMode)
+                                            )}
                                         </p>
                                     )}
 
@@ -40,7 +62,10 @@ const SearchSection = ({title, items, type, ref}: SearchSectionProps) => (
                                         <a href={item.url}
                                            className="flex items-center text-blue-500 text-sm hover:underline">
                                             <Link className="h-4 w-4 mr-1"/>
-                                            {HighlightText(item.url, getMatchedTerms(item, "url"))}
+                                            {HighlightText(
+                                                item.url,
+                                                getMatchedTerms(item.url, searchTerm, matchMode)
+                                            )}
                                         </a>
                                     )}
 
@@ -48,35 +73,36 @@ const SearchSection = ({title, items, type, ref}: SearchSectionProps) => (
                                         {item.folder && (
                                             <Badge className="flex items-center">
                                                 <Folder className="h-4 w-4 mr-1"/>
-                                                {HighlightText(item.folder, getMatchedTerms(item, "folder"))}
+                                                {HighlightText(
+                                                    item.folder,
+                                                    getMatchedTerms(item.folder, searchTerm, matchMode)
+                                                )}
                                             </Badge>
                                         )}
-
-                                        {item.tags &&
-                                            item.tags.split(",").map((tag: string) => (
-                                                <Badge key={tag} className="flex items-center">
-                                                    <Tag className="h-4 w-4 mr-1"/>
-                                                    {HighlightText(tag.trim(), getMatchedTerms(item, "tags"))}
-                                                </Badge>
-                                            ))}
+                                        {item.tags && item.tags.split(",").map((tag: string) => (
+                                            <Badge key={tag} className="flex items-center">
+                                                <Tag className="h-4 w-4 mr-1"/>
+                                                {HighlightText(tag.trim(), getMatchedTerms(tag, searchTerm, matchMode))}
+                                            </Badge>
+                                        ))}
                                     </div>
                                     <SearchResultsBookmarkActions/>
                                 </>
                             )}
 
-                            {type === "tag" && item.tags !== undefined && (
-                                <div className="flex items-center text-sm text-gray-600">
-                                    <Tag className="h-4 w-4 mr-2 text-blue-400"/>
-                                    {HighlightText(item?.tags, getMatchedTerms(item, "tags"))}
-                                </div>
-                            )}
-
-                            {type === "folder" && item?.folder && (
-                                <div className="flex items-center text-sm text-gray-600">
-                                    <Folder className="h-4 w-4 mr-2 text-yellow-500"/>
-                                    {HighlightText(item?.folder, getMatchedTerms(item, "folder"))}
-                                </div>
-                            )}
+                            {/* ... Folder/Tag specific card views ... */}
+                            {/*TODO: DEBUG - REMOVE AFTER TESTING */}
+                            {/*                    {process.env.NODE_ENV === "development" && (*/}
+                            {/*                        <div*/}
+                            {/*                            className="text-[10px] bg-gray-100 p-2 mb-2 rounded border border-dashed border-gray-300">*/}
+                            {/*                            <span className="font-bold text-gray-600">DEBUG: </span>*/}
+                            {/*                            <span className="mr-2">ID: {item.id}</span>*/}
+                            {/*                            <span className="mr-2">DB Rank: {item.match.toFixed(3)}</span>*/}
+                            {/*                            <span>*/}
+                            {/*    Matches Found: {getMatchedTerms(item.title + " " + item.description + " " + item.url, searchTerm, matchMode).join(", ") || "NONE"}*/}
+                            {/*</span>*/}
+                            {/*                        </div>*/}
+                            {/*                    )}*/}
                         </CardContent>
                     </Card>
                 ))}
@@ -85,4 +111,4 @@ const SearchSection = ({title, items, type, ref}: SearchSectionProps) => (
     </div>
 );
 
-export default SearchSection
+export default SearchSection;
