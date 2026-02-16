@@ -75,41 +75,56 @@ const CreateBookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
         isRefetching: isFoldersRefetching
     } = useGetUserFoldersQuery(session?.user?.id);
 
-    useEffect(() => {
-        if (createBookmarkMutation.status === "success") {
-            setTimeout(() => {
-                void queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useBookmarksOnHomePageQueryKey]});
-            }, 100)
-
-            setTimeout(() => {
-                void queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useTagsForBookmarksQueryKey]});
-            }, 200)
-
-            setTimeout(() => {
-                void queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useGetUserFoldersSidebarQuery]});
-            }, 300)
-
-            toast({
-                title: "Bookmark created",
-                description: "Your bookmark has been successfully added.",
-            });
-
-            setOpen(false);
-            form.reset(); // reset form
-            router.push("/home");
-        }
-
-        if (createBookmarkMutation.status === "error") {
-            toast({
-                title: "Error",
-                description: "There was a problem creating your bookmark.",
-                variant: "destructive",
-            })
-        }
-    }, [createBookmarkMutation.status]);
-
+    // useEffect(() => {
+    //     if (createBookmarkMutation.status === "success") {
+    //         setTimeout(() => {
+    //             void queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useBookmarksOnHomePageQueryKey]});
+    //         }, 100)
+    //
+    //         setTimeout(() => {
+    //             void queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useTagsForBookmarksQueryKey]});
+    //         }, 200)
+    //
+    //         setTimeout(() => {
+    //             void queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useGetUserFoldersSidebarQuery]});
+    //         }, 300)
+    //
+    //         toast({
+    //             title: "Bookmark created",
+    //             description: "Your bookmark has been successfully added.",
+    //         });
+    //
+    //         setOpen(false);
+    //         form.reset(); // reset form
+    //         router.push("/home");
+    //     }
+    //
+    //     if (createBookmarkMutation.status === "error") {
+    //         toast({
+    //             title: "Error",
+    //             description: "There was a problem creating your bookmark.",
+    //             variant: "destructive",
+    //         })
+    //     }
+    // }, [createBookmarkMutation.status]);
+    //
 
     // handle the form submission to create bookmark
+    // const onSubmit = async (data: BookmarkFormData) => {
+    //     const formData = new FormData();
+    //     Object.entries(data).forEach(([key, value]) => {
+    //         if (key === "tags" && Array.isArray(value)) {
+    //             formData.append(key, JSON.stringify(value));
+    //         } else if (value !== undefined && value !== null) {
+    //             formData.append(key, value.toString())
+    //         }
+    //     })
+    //
+    //     if (session?.user?.id) {
+    //         createBookmarkMutation.mutate({formData, userId: session.user.id})
+    //     }
+    // };
+
     const onSubmit = async (data: BookmarkFormData) => {
         const formData = new FormData();
         Object.entries(data).forEach(([key, value]) => {
@@ -118,11 +133,33 @@ const CreateBookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
             } else if (value !== undefined && value !== null) {
                 formData.append(key, value.toString())
             }
-        })
+        });
 
-        if (session?.user?.id) {
-            createBookmarkMutation.mutate({formData, userId: session.user.id})
-        }
+        // No need to pass userId, the server action handles it via session
+        createBookmarkMutation.mutate(formData, {
+            onSuccess: () => {
+                // Invalidate queries strictly
+                queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useBookmarksOnHomePageQueryKey]});
+                queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useTagsForBookmarksQueryKey]});
+                queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useGetUserFoldersSidebarQuery]});
+
+                toast({
+                    title: "Bookmark created",
+                    description: "Your bookmark has been successfully added.",
+                });
+
+                setOpen(false);
+                form.reset();
+                router.push("/home");
+            },
+            onError: (error) => {
+                toast({
+                    title: "Error",
+                    description: error.message || "There was a problem creating your bookmark.",
+                    variant: "destructive",
+                });
+            }
+        });
     };
 
     // fetch metadata for the provided URL
@@ -143,19 +180,20 @@ const CreateBookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
 
             console.log(metadata);
 
-            if (metadata.title === null && metadata.description === null) {
+            if (metadata && metadata.title === null && metadata.description === null) {
                 toast({
                     title: "Metadata not found",
                     description: "Unable to fetch metadata for the provided URL. Please enter a manual title/description.",
                 });
                 return;
             }
-            form.setValue("title", metadata.title || "");
-            form.setValue("description", metadata.description || "");
-
-            if (metadata.preview_image) {
-                setPreviewImageURL(metadata.preview_image)
-                form.setValue("imageURL", metadata.preview_image)
+            if (metadata) {
+                form.setValue("title", metadata.title || "");
+                form.setValue("description", metadata.description || "");
+                if (metadata.preview_image) {
+                    setPreviewImageURL(metadata.preview_image)
+                    form.setValue("imageURL", metadata.preview_image)
+                }
             }
 
             toast({
@@ -175,7 +213,8 @@ const CreateBookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
 
     // handle folder creation
     const handleCreateFolder = async () => {
-        await createFolders({names: [folderInputValue], userId: session?.user?.id});
+        // await createFolders({names: [folderInputValue], userId: session?.user?.id});
+        await createFolders({names: [folderInputValue]});
         await refetchFolders();
         setFolderInputValue("")
     };

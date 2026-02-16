@@ -10,8 +10,8 @@ import {
     GetBookmarkByUserIdResponse,
     Tag
 } from "@/app/actions/types";
-import {Prisma} from "@prisma/client";
 import {logger} from "@/lib/logger";
+import {Prisma} from "@prisma/client";
 
 /**
  * Creates a new bookmark for the authenticated user.
