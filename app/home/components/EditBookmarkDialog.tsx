@@ -11,19 +11,17 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog"
 import {Edit} from "lucide-react"
-import {z} from "zod"
 import {Button} from "@/components/ui/button";
-import EditBookmarkForm from "@/app/home/components/EditBookmarkForm";
+import BookmarkForm from "./BookmarkForm"
 
-export const editBookmarkSchema = z.object({
-    id: z.number(),
-    title: z.string().optional(),
-    url: z.string().url("Must be a valid URL"),
-    description: z.string().max(500, "Description must be 500 characters or less").optional(),
-    folderId: z.string().optional(),
-});
-
-export type EditBookmarkFormData = z.infer<typeof editBookmarkSchema>;
+// converting this from the zod schema since there is no reason for a validation as the data is getting pre-populated.
+export type EditBookmarkFormData = {
+    id: number;
+    title?: string;
+    url: string;
+    description?: string;
+    folderId?: number;
+}
 
 const EditBookmarkDialog = ({bookmarkFormData}: { bookmarkFormData: EditBookmarkFormData }) => {
     const [open, setOpen] = useState(false);
@@ -45,9 +43,7 @@ const EditBookmarkDialog = ({bookmarkFormData}: { bookmarkFormData: EditBookmark
                     </DialogDescription>
                 </DialogHeader>
 
-                <EditBookmarkForm bookmarkFormData={bookmarkFormData} setOpen={setOpen}/>
-
-                {/*<BookmarkForm setOpen={setOpen}/>*/}
+                <BookmarkForm setOpen={setOpen} initialData={bookmarkFormData}/>
                 <DialogFooter className="mt-4">
                 </DialogFooter>
             </DialogContent>

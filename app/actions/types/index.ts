@@ -1,4 +1,4 @@
-import { Bookmark, BookmarkTags } from "@prisma/client";
+import {Bookmark, BookmarkTags} from "@prisma/client";
 
 type ApplySettingsInput = {
     userId: string;
@@ -131,9 +131,12 @@ interface DeleteBookmarkByUserIdError {
 
 type DeleteBookmarkByUserIdResponse = DeleteBookmarkByUserIdSuccess | DeleteBookmarkByUserIdError;
 
+export type BookmarkTagsWithTag = BookmarkTags & { tag: Tag };
+
 type GetTagsForBookmarkSuccess = {
     success: true,
-    data: BookmarkTags[]
+    // data: BookmarkTags[]
+    data: BookmarkTagsWithTag[]
 }
 type GetTagsForBookmarkError = {
     success: false,

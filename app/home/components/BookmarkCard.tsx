@@ -25,6 +25,7 @@ import {QUERY_KEYS} from "@/lib/queryKeys";
 import {toast} from "@/hooks/use-toast";
 import {useQueryClient} from "@tanstack/react-query";
 import Image from "next/image";
+import BookmarkForm from "@/app/home/components/BookmarkForm";
 
 
 const BookmarkCard = ({bookmark, bookmarkTagsResponse}: {
@@ -158,7 +159,7 @@ const BookmarkCard = ({bookmark, bookmarkTagsResponse}: {
                             url: bookmark.url,
                             description: bookmark.description === null ? "" : bookmark.description,
                             title: bookmark.title === null ? "" : bookmark.title,
-                            folderId: bookmark.folderId === null ? undefined : bookmark.folderId.toString(),
+                            folderId: bookmark.folderId === null ? undefined : bookmark.folderId,
                         }}/>
                         <Button
                             variant="ghost"

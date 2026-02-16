@@ -4,7 +4,7 @@ import {Dispatch, FC, SetStateAction, useEffect} from "react"
 import {useState} from "react"
 import {useForm} from "react-hook-form"
 import {zodResolver} from "@hookform/resolvers/zod"
-import {useQueryClient} from "@tanstack/react-query"
+import {useQuery, useQueryClient} from "@tanstack/react-query"
 import {useRouter} from "next/navigation"
 import {Button} from "@/components/ui/button"
 import {Input} from "@/components/ui/input"
@@ -24,7 +24,6 @@ import {createFolders} from "@/app/actions/folders";
 import {Tag} from "@/app/actions/types";
 import {ScrollArea} from "@/components/ui/scroll-area"
 import * as React from "react";
-import {LoadingSpinner} from "@/components/ui/loading-spinner";
 import {useCreateBookmarkMutation} from "@/hooks/use-create-bookmark-mutation";
 import {useGetUserTagsQuery} from "@/hooks/use-get-user-tags-query";
 import {useGetUserFoldersQuery} from "@/hooks/use-get-user-folders-query";
@@ -32,21 +31,32 @@ import {QUERY_KEYS} from "@/lib/queryKeys";
 import Image from "next/image";
 import {Skeleton} from "@/components/ui/skeleton";
 import {useSettings} from "@/app/context/SettingsContext";
+import {useUpdateBookmarkMutation} from "@/hooks/use-update-bookmark-mutation";
+import {getTagsForBookmark} from "@/app/actions/tags";
+import {LoadingSpinner} from "@/components/ui/loading-spinner"
 
 interface CreateBookmarkFormProps {
-    setOpen: Dispatch<SetStateAction<boolean>>
+    setOpen: Dispatch<SetStateAction<boolean>>,
+    initialData?: {
+        id: number;
+        title?: string;
+        url: string;
+        description?: string;
+        folderId?: number;
+    } // adding this one, if this is present then the edit
 }
 
-const BookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
+const BookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen, initialData}) => {
+    const isEditMode = !!initialData;
     const queryClient = useQueryClient();
     const {settings} = useSettings();
     const form = useForm<BookmarkFormData>({
         resolver: zodResolver(bookmarkSchema),
         defaultValues: {
-            title: "",
-            url: "",
-            description: "",
-            folderId: undefined,
+            title: initialData?.title || "",
+            url: initialData?.url || "",
+            description: initialData?.description || "",
+            folderId: initialData?.folderId?.toString() || undefined,
             tags: [],
             imageURL: "",
         },
@@ -55,14 +65,18 @@ const BookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
     const {data: session} = authClient.useSession();
     const {url} = form.watch();
     const {toast} = useToast();
-    const [loading, setLoading] = useState<boolean>(false);
+    // const [loading, setLoading] = useState<boolean>(false);
     const router = useRouter();
 
     const [selectedTags, setSelectedTags] = useState<Tag[]>(form.getValues("tags") || []);
     const [folderInputValue, setFolderInputValue] = useState("");
     const [previewImageURL, setPreviewImageURL] = useState("");
+    const [loadingMetadata, setLoadingMetadata] = useState<boolean>(false);
 
-    const createBookmarkMutation = useCreateBookmarkMutation();
+    const createMutation = useCreateBookmarkMutation();
+    const updateMutation = useUpdateBookmarkMutation();
+    const isSubmitting = createMutation.isPending || updateMutation.isPending;
+
     const {
         data: tags = [],
         refetch: refetchTags,
@@ -75,55 +89,48 @@ const BookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
         isRefetching: isFoldersRefetching
     } = useGetUserFoldersQuery(session?.user?.id);
 
-    // useEffect(() => {
-    //     if (createBookmarkMutation.status === "success") {
-    //         setTimeout(() => {
-    //             void queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useBookmarksOnHomePageQueryKey]});
-    //         }, 100)
-    //
-    //         setTimeout(() => {
-    //             void queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useTagsForBookmarksQueryKey]});
-    //         }, 200)
-    //
-    //         setTimeout(() => {
-    //             void queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useGetUserFoldersSidebarQuery]});
-    //         }, 300)
-    //
-    //         toast({
-    //             title: "Bookmark created",
-    //             description: "Your bookmark has been successfully added.",
-    //         });
-    //
-    //         setOpen(false);
-    //         form.reset(); // reset form
-    //         router.push("/home");
-    //     }
-    //
-    //     if (createBookmarkMutation.status === "error") {
-    //         toast({
-    //             title: "Error",
-    //             description: "There was a problem creating your bookmark.",
-    //             variant: "destructive",
-    //         })
-    //     }
-    // }, [createBookmarkMutation.status]);
-    //
+    const {data: existingTagsResponse} = useQuery({
+        queryKey: ["tagsForBookmark", initialData?.id],
+        queryFn: () => getTagsForBookmark(initialData!.id),
+        enabled: isEditMode && !!initialData?.id,
+    })
 
-    // handle the form submission to create bookmark
-    // const onSubmit = async (data: BookmarkFormData) => {
-    //     const formData = new FormData();
-    //     Object.entries(data).forEach(([key, value]) => {
-    //         if (key === "tags" && Array.isArray(value)) {
-    //             formData.append(key, JSON.stringify(value));
-    //         } else if (value !== undefined && value !== null) {
-    //             formData.append(key, value.toString())
-    //         }
-    //     })
-    //
-    //     if (session?.user?.id) {
-    //         createBookmarkMutation.mutate({formData, userId: session.user.id})
-    //     }
-    // };
+    useEffect(() => {
+        if (existingTagsResponse?.success && existingTagsResponse.data) {
+            const loadedTags = existingTagsResponse.data.map((t) => t.tag);
+            setSelectedTags(loadedTags);
+            form.setValue("tags", loadedTags);
+        }
+    }, [existingTagsResponse, form]);
+
+    const handleError = (error: Error) => {
+        toast({
+            title: "Error",
+            description: error.message,
+            variant: "destructive",
+        });
+    };
+
+    const handleSuccess = () => {
+        queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useBookmarksOnHomePageQueryKey]});
+        queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useTagsForBookmarksQueryKey]});
+        queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useGetUserFoldersSidebarQuery]});
+        if (isEditMode) {
+            queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useFilteredBookmarksQuery]});
+        }
+
+        toast({
+            title: isEditMode ? "Bookmark updated" : "Bookmark created",
+            description: `Your bookmark has been successfully ${isEditMode ? "updated" : "added"}.`,
+        });
+
+        setOpen(false);
+        form.reset();
+
+        if (!isEditMode) {
+            router.push("/home");
+        }
+    };
 
     const onSubmit = async (data: BookmarkFormData) => {
         const formData = new FormData();
@@ -131,35 +138,21 @@ const BookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
             if (key === "tags" && Array.isArray(value)) {
                 formData.append(key, JSON.stringify(value));
             } else if (value !== undefined && value !== null) {
-                formData.append(key, value.toString())
+                formData.append(key, value.toString());
             }
         });
 
-        // No need to pass userId, the server action handles it via session
-        createBookmarkMutation.mutate(formData, {
-            onSuccess: () => {
-                // Invalidate queries strictly
-                queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useBookmarksOnHomePageQueryKey]});
-                queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useTagsForBookmarksQueryKey]});
-                queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useGetUserFoldersSidebarQuery]});
-
-                toast({
-                    title: "Bookmark created",
-                    description: "Your bookmark has been successfully added.",
-                });
-
-                setOpen(false);
-                form.reset();
-                router.push("/home");
-            },
-            onError: (error) => {
-                toast({
-                    title: "Error",
-                    description: error.message || "There was a problem creating your bookmark.",
-                    variant: "destructive",
-                });
-            }
-        });
+        if (isEditMode && initialData) {
+            updateMutation.mutate(
+                {formData, bookmarkId: initialData.id},
+                {onSuccess: handleSuccess, onError: handleError}
+            );
+        } else {
+            createMutation.mutate(formData, {
+                onSuccess: handleSuccess,
+                onError: handleError,
+            });
+        }
     };
 
     // fetch metadata for the provided URL
@@ -173,7 +166,8 @@ const BookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
             return
         }
 
-        setLoading(true)
+        // setLoading(true)
+        setLoadingMetadata(true)
 
         try {
             const metadata = await fetchMetadata(url)
@@ -207,7 +201,8 @@ const BookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
                 variant: "destructive",
             });
         } finally {
-            setLoading(false);
+            // setLoading(false);
+            setLoadingMetadata(false);
         }
     };
 
@@ -218,6 +213,7 @@ const BookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
         await refetchFolders();
         setFolderInputValue("")
     };
+
 
     return (
         <Form {...form}>
@@ -244,7 +240,9 @@ const BookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
                                                     size="icon"
                                                     aria-label="Autofill data"
                                                 >
-                                                    <Wand2 className="h-4 w-4"/>
+                                                    {loadingMetadata ? <LoadingSpinner/> :
+                                                        <Wand2 className="h-4 w-4"/>}
+                                                    {/*<Wand2 className="h-4 w-4"/>*/}
                                                 </Button>
                                             </TooltipTrigger>
                                             <TooltipContent>
@@ -267,19 +265,19 @@ const BookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
                         <FormItem>
                             <FormLabel>Preview Image</FormLabel>
                             <FormControl>
-                                {(previewImageURL !== "" || loading) && (
-                                    <div className="rounded-lg overflow-hidden border border-border">
-                                        <Input className={"hidden"} {...field} value={previewImageURL}
+                                {(previewImageURL !== "" || loadingMetadata) && (
+                                    <div className=" rounded-lg overflow-hidden border border-border">
+                                        <Input className={" hidden"} {...field} value={previewImageURL}
                                                onChange={(e) => field.onChange(e.target.value)}/>
-                                        <div className="relative aspect-video w-full">
-                                            {loading ? (
-                                                <Skeleton className="absolute inset-0"/>
+                                        <div className=" relative aspect-video w-full">
+                                            {loadingMetadata ? (
+                                                <Skeleton className=" absolute inset-0"/>
                                             ) : (
                                                 <Image
                                                     src={previewImageURL}
-                                                    alt="URL preview"
+                                                    alt=" URL preview"
                                                     fill
-                                                    className="object-cover"
+                                                    className=" object-cover"
                                                     sizes="(max-width: 768px) 100vw, 600px"
                                                 />
                                             )}
@@ -304,7 +302,7 @@ const BookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
                         <FormItem>
                             <FormLabel>Title (Optional)</FormLabel>
                             <FormControl>
-                                <Input disabled={loading} placeholder="Enter bookmark title" {...field} />
+                                <Input disabled={loadingMetadata} placeholder="Enter bookmark title" {...field} />
                             </FormControl>
                             <FormDescription>The title of your bookmark.</FormDescription>
                             <FormMessage/>
@@ -320,7 +318,7 @@ const BookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
                         <FormItem>
                             <FormLabel>Description (Optional)</FormLabel>
                             <FormControl>
-                                <Textarea disabled={loading} placeholder="Enter a description" {...field} />
+                                <Textarea disabled={loadingMetadata} placeholder="Enter a description" {...field} />
                             </FormControl>
                             <FormDescription>A brief description of the bookmark.</FormDescription>
                             <FormMessage/>
@@ -425,8 +423,9 @@ const BookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
                     )}
                 />
 
-                <Button type="submit" disabled={loading || createBookmarkMutation.isPending}>
-                    Save Bookmark
+                <Button type="submit" disabled={loadingMetadata || createMutation.isPending}>
+                    {isEditMode ? "Update Bookmark" : "Save Bookmark"}
+                    {/*Save Bookmark*/}
                 </Button>
             </form>
         </Form>
