@@ -37,7 +37,7 @@ interface CreateBookmarkFormProps {
     setOpen: Dispatch<SetStateAction<boolean>>
 }
 
-const CreateBookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
+const BookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
     const queryClient = useQueryClient();
     const {settings} = useSettings();
     const form = useForm<BookmarkFormData>({
@@ -433,4 +433,4 @@ const CreateBookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
     )
 }
 
-export default CreateBookmarkForm
+export default BookmarkForm

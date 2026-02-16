@@ -10,7 +10,7 @@ const ToggleContext = createContext<ToggleContextType | undefined>(undefined);
 // This is currently a hack because the cache revalidation is not working as expected
 // Ideally, cache should be revalidated when a new bookmark is created and the BookmarkList component should display the
 // new bookmark without having to refresh the page.
-// Since that is not working, this toggle function is getting called on the CreateBookmarkForm component to force a
+// Since that is not working, this toggle function is getting called on the BookmarkForm component to force a
 // revalidation of the cache and refresh of the new bookmarks.
 // I may need to make this more customized to ensure only "toggles" happen when a new bookmark is created and not
 // any other time.

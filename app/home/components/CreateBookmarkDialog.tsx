@@ -13,7 +13,7 @@ import {
 import {Bookmark} from "lucide-react"
 import {z} from "zod"
 import ActionButton from "@/app/home/ActionButton";
-import CreateBookmarkForm from "./CreateBookmarkForm"
+import BookmarkForm from "./BookmarkForm"
 
 export const bookmarkSchema = z.object({
     title: z.string().optional(),
@@ -45,7 +45,7 @@ const CreateBookmarkDialog = () => {
                         Enter the details of your new bookmark here. Click save when you are done.
                     </DialogDescription>
                 </DialogHeader>
-                <CreateBookmarkForm setOpen={setOpen}/>
+                <BookmarkForm setOpen={setOpen}/>
                 <DialogFooter className="mt-4">
                 </DialogFooter>
             </DialogContent>

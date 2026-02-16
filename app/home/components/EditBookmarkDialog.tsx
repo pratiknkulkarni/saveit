@@ -47,7 +47,7 @@ const EditBookmarkDialog = ({bookmarkFormData}: { bookmarkFormData: EditBookmark
 
                 <EditBookmarkForm bookmarkFormData={bookmarkFormData} setOpen={setOpen}/>
 
-                {/*<CreateBookmarkForm setOpen={setOpen}/>*/}
+                {/*<BookmarkForm setOpen={setOpen}/>*/}
                 <DialogFooter className="mt-4">
                 </DialogFooter>
             </DialogContent>
