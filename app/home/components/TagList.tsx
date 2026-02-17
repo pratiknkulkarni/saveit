@@ -89,32 +89,10 @@ const TagList = () => {
     const tagIds = searchParams.getAll("tagId") || "";
     const folderId = searchParams.get("folderId") || "";
 
-    const deleteTagMutation = useDeleteTagMutation(session?.user?.id);
+    const deleteTagMutation = useDeleteTagMutation();
     const updateTagMutation = useUpdateTagBookmarkMutation(session?.user?.id);
 
     useEffect(() => {
-        if (deleteTagMutation?.data && deleteTagMutation.data.success) {
-            setTimeout(() => {
-                void queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useGetUserTagsQueryKey]});
-            }, 100)
-
-            setTimeout(() => {
-                void queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useTagsForBookmarksQueryKey]});
-            }, 200)
-
-            toast({
-                title: "Tag deleted",
-                description: "Your tag has been successfully deleted.",
-            });
-        }
-
-        if (deleteTagMutation?.data && !deleteTagMutation.data.success) {
-            toast({
-                title: "Error",
-                description: deleteTagMutation.data.error,
-            });
-        }
-
         if (updateTagMutation?.data && !updateTagMutation.data.success) {
             toast({
                 title: "Error",
@@ -245,7 +223,6 @@ const TagList = () => {
                                                         onClick={() => handleSaveTagName(tag.id, tag.name, editingTagName)}
                                                         disabled={updateTagMutation.isPending || editingTagName === ""}
                                                     >
-                                                        {/*{title}*/}
                                                         {updateTagMutation.isPending ? "Saving..." : "Save"}
                                                     </Button>
 
@@ -261,8 +238,21 @@ const TagList = () => {
                                             className="h-3 w-3 text-gray-500 hover:text-red-500 ml-1"
                                             onClick={(e) => {
                                                 e.stopPropagation();
-                                                deleteTagMutation.mutate(tag.id);
-                                            }}
+                                                deleteTagMutation.mutate(tag.id, {
+                                                    onSuccess: () => {
+                                                        toast({
+                                                            title: "Tag deleted",
+                                                            description: "Your tag has been successfully deleted.",
+                                                        });
+                                                    },
+                                                    onError: () => {
+                                                        toast({
+                                                            title: "Error deleting tag.",
+                                                        });
+                                                    }
+                                                });
+                                            }
+                                            }
                                         >
                                             <XIcon className="h-3 w-3"/>
                                         </button>

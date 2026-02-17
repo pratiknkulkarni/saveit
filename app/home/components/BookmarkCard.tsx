@@ -31,7 +31,7 @@ const BookmarkCard = ({bookmark, bookmarkTagsResponse}: {
     const {settings} = useSettings();
     const {data: session} = authClient.useSession();
     const deleteBookmarkMutation = useDeleteBookmarkMutation(session?.user?.id);
-    const toggleBookmarkMutation = useToggleBookmarkMutation(session?.user?.id);
+    const toggleBookmarkMutation = useToggleBookmarkMutation();
 
     return (
         <div>
@@ -129,6 +129,15 @@ const BookmarkCard = ({bookmark, bookmarkTagsResponse}: {
                                 toggleBookmarkMutation.mutate({
                                     isFavorite: !currentFavorite,
                                     bookmarkId: bookmark.id,
+                                }, {
+                                    onSuccess: () => {
+                                        toast({
+                                            title: "Bookmark toggled",
+                                        })
+                                    },
+                                    onError: () => {
+                                        toast({title: "Error", variant: "destructive"});
+                                    }
                                 });
                             }}
                         >
