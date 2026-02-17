@@ -1,8 +1,8 @@
 import {deleteFolder} from "@/app/actions/folders";
 import {useMutation} from "@tanstack/react-query";
 
-export const useDeleteFolderMutation = (userId: string | undefined) => {
+export const useDeleteFolderMutation = () => {
     return useMutation({
-        mutationFn: (folderId: number) => deleteFolder({folderId, userId})
+        mutationFn: (folderId: number) => deleteFolder({folderId})
     });
 };

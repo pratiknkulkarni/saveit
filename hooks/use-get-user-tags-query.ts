@@ -3,11 +3,10 @@ import {getUserTags} from "@/app/actions/tags";
 import {Tag} from "@/app/actions/types";
 import {QUERY_KEYS} from "@/lib/queryKeys";
 
-export const useGetUserTagsQuery = (userId: string | undefined) => {
+export const useGetUserTagsQuery = () => {
     return useQuery({
-        queryKey: [QUERY_KEYS.useGetUserTagsQueryKey, userId],
-        queryFn: () => getUserTags({userId}),
-        enabled: !!userId,
+        queryKey: [QUERY_KEYS.useGetUserTagsQueryKey],
+        queryFn: () => getUserTags(),
         select: (response) =>
             response.success && response.data
                 ? response.data.map((tag: Tag) => ({

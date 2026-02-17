@@ -6,7 +6,6 @@ export const useUpdateTagBookmarkMutation = (userId: string | undefined) => {
         mutationFn: ({tagId, newTagName}: { tagId: number, newTagName: string }) => updateTag({
             tagId,
             newTagName,
-            userId,
         })
     });
 };
