@@ -20,12 +20,8 @@ import {useToggleBookmarkMutation} from "@/hooks/use-toggle-bookmark-mutation";
 import {authClient} from "@/lib/auth-client";
 import {Bookmark} from "@prisma/client";
 import {GetFormattedTagsForBookmarksResponse} from "@/app/actions/types";
-import {useEffect} from "react";
-import {QUERY_KEYS} from "@/lib/queryKeys";
 import {toast} from "@/hooks/use-toast";
-import {useQueryClient} from "@tanstack/react-query";
 import Image from "next/image";
-import BookmarkForm from "@/app/home/components/BookmarkForm";
 
 
 const BookmarkCard = ({bookmark, bookmarkTagsResponse}: {
@@ -36,44 +32,6 @@ const BookmarkCard = ({bookmark, bookmarkTagsResponse}: {
     const {data: session} = authClient.useSession();
     const deleteBookmarkMutation = useDeleteBookmarkMutation(session?.user?.id);
     const toggleBookmarkMutation = useToggleBookmarkMutation(session?.user?.id);
-    const queryClient = useQueryClient();
-
-    useEffect(() => {
-        if (deleteBookmarkMutation.status === "success") {
-            void queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useBookmarksOnHomePageQueryKey]});
-            toast({
-                title: "Bookmark deleted",
-                description: "Your bookmark has been successfully deleted.",
-            });
-        }
-
-        if (toggleBookmarkMutation.status === "success") {
-            setTimeout(() => {
-                void queryClient.invalidateQueries({queryKey: [QUERY_KEYS.useBookmarksOnHomePageQueryKey]});
-            }, 100)
-
-            toast({
-                title: "Success!",
-            });
-        }
-
-        if (deleteBookmarkMutation.status === "error") {
-            toast({
-                title: "Error",
-                description: "There was a problem deleting your bookmark.",
-                variant: "destructive",
-            })
-        }
-
-        if (toggleBookmarkMutation.status === "error") {
-            toast({
-                title: "Error",
-                description: "There was a problem updating your bookmark.",
-                variant: "destructive",
-            })
-        }
-
-    }, [deleteBookmarkMutation.status, toggleBookmarkMutation.status]);
 
     return (
         <div>
@@ -196,7 +154,17 @@ const BookmarkCard = ({bookmark, bookmarkTagsResponse}: {
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                                     <AlertDialogAction
                                         onClick={() => {
-                                            deleteBookmarkMutation.mutate(bookmark.id)
+                                            deleteBookmarkMutation.mutate(bookmark.id, {
+                                                onSuccess: () => {
+                                                    toast({
+                                                        title: "Bookmark deleted",
+                                                        description: "Your bookmark has been successfully deleted.",
+                                                    })
+                                                },
+                                                onError: () => {
+                                                    toast({title: "Error", variant: "destructive"});
+                                                }
+                                            })
                                         }}>Continue</AlertDialogAction>
                                 </AlertDialogFooter>
                             </AlertDialogContent>

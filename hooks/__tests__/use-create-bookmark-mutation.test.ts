@@ -1,7 +1,7 @@
 import {renderHook, waitFor} from "@testing-library/react";
 import {describe, it, expect, vi, beforeEach} from "vitest";
 import {useCreateBookmarkMutation} from "../use-create-bookmark-mutation";
-import {createQueryClientWrapper} from "@/tests/wrapper"; // Import from the new file
+import {createQueryClientWrapper} from "@/tests/wrapper";
 import * as bookmarkActions from "@/app/actions/bookmark";
 
 vi.mock("@/app/actions/bookmark", () => ({
