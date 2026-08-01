@@ -2,12 +2,19 @@
   "name": "savethisforme",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20.9"
+  },
   "scripts": {
     "dev": "next dev --turbopack --port 33449",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "vitest"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "db:migrate": "prisma migrate deploy"
   },
   "dependencies": {
     "@dicebear/collection": "^9.2.2",
