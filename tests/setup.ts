@@ -3,12 +3,15 @@ import {prisma} from '@/lib/prisma';
 import {execSync} from 'child_process';
 
 try {
-    execSync('npx prisma db push --schema=./prisma/schema.prisma --accept-data-loss', {
+    // `migrate deploy`, not `db push`: this is the same path containers take on
+    // boot, so the tests also prove the committed migrations apply cleanly and
+    // that pg_trgm exists. The beforeEach TRUNCATE already skips _prisma_migrations.
+    execSync('npx prisma migrate deploy --schema=./prisma/schema.prisma', {
         env: process.env, // this is where the vitest.config.mts injects that variable
         stdio: 'ignore'
     });
 } catch (e) {
-    console.error("Failed to sync test database schema", e);
+    console.error("Failed to migrate test database schema", e);
 }
 
 beforeEach(async () => {

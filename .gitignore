@@ -14,7 +14,8 @@
 /coverage
 
 # next.js
-/.next/
+# not root-anchored: a stray app/.next/ was tracked until now
+.next/
 /out/
 
 # production
@@ -48,3 +49,6 @@ identifier.sqlite
 
 *.db
 *.sql
+# ...but Prisma migrations must be committed, or `migrate deploy` applies nothing
+# and pg_trgm never gets created.
+!prisma/migrations/**/migration.sql

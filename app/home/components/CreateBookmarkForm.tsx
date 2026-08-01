@@ -178,22 +178,20 @@ const CreateBookmarkForm: FC<CreateBookmarkFormProps> = ({setOpen}) => {
         try {
             const metadata = await fetchMetadata(url)
 
-            console.log(metadata);
-
-            if (metadata && metadata.title === null && metadata.description === null) {
+            // A null metadata used to fall through to the "Metadata Fetched" toast
+            // below, reporting success while setting nothing.
+            if (!metadata || (metadata.title === null && metadata.description === null)) {
                 toast({
                     title: "Metadata not found",
                     description: "Unable to fetch metadata for the provided URL. Please enter a manual title/description.",
                 });
                 return;
             }
-            if (metadata) {
-                form.setValue("title", metadata.title || "");
-                form.setValue("description", metadata.description || "");
-                if (metadata.preview_image) {
-                    setPreviewImageURL(metadata.preview_image)
-                    form.setValue("imageURL", metadata.preview_image)
-                }
+            form.setValue("title", metadata.title || "");
+            form.setValue("description", metadata.description || "");
+            if (metadata.preview_image) {
+                setPreviewImageURL(metadata.preview_image)
+                form.setValue("imageURL", metadata.preview_image)
             }
 
             toast({
