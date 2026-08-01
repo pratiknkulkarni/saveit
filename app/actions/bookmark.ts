@@ -8,7 +8,6 @@ import {
     CreateBookmarkResponse,
     DeleteBookmarkByUserIdResponse,
     GetBookmarkByUserIdResponse,
-    Tag
 } from "@/app/actions/types";
 import {logger} from "@/lib/logger";
 import {Prisma} from "@prisma/client";
@@ -213,6 +212,7 @@ export const updateBookmark = async (formData: FormData, bookmarkId: number) => 
             description: formData.get("description")?.toString(),
             folderId: formData.get("folderId") ? Number(formData.get("folderId")) : undefined,
             tags: JSON.parse(formData.get("tags")?.toString() || "[]"),
+            tagsModified: formData.get("tagsModified")?.toString() === "true",
         };
 
         const validatedData = bookmarkSchema.safeParse(rawData);
@@ -225,7 +225,7 @@ export const updateBookmark = async (formData: FormData, bookmarkId: number) => 
             };
         }
 
-        const {tags, ...dataToUpdate} = validatedData.data;
+        const {tags, tagsModified, ...dataToUpdate} = validatedData.data;
 
         await prisma.$transaction(async (tx) => {
             const existing = await tx.bookmark.findFirst({
@@ -242,9 +242,12 @@ export const updateBookmark = async (formData: FormData, bookmarkId: number) => 
                 }
             });
 
-            if (tags) {
+            // Only touch tags when the form says they actually changed. `tags`
+            // parses to [] on a title-only edit, which is truthy — gating on it
+            // would delete every tag the bookmark has.
+            if (tagsModified) {
                 await tx.bookmarkTags.deleteMany({where: {bookmarkId}});
-                if (tags.length > 0) {
+                if (tags && tags.length > 0) {
                     await tx.bookmarkTags.createMany({
                         data: tags.map(tag => ({
                             bookmarkId,

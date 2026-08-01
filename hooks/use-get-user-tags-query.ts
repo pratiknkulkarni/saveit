@@ -6,7 +6,7 @@ import {QUERY_KEYS} from "@/lib/queryKeys";
 export const useGetUserTagsQuery = (userId: string | undefined) => {
     return useQuery({
         queryKey: [QUERY_KEYS.useGetUserTagsQueryKey, userId],
-        queryFn: () => getUserTags({userId}),
+        queryFn: () => getUserTags(),
         enabled: !!userId,
         select: (response) =>
             response.success && response.data

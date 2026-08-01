@@ -66,7 +66,7 @@ const EditBookmarkForm: FC<EditBookmarkFormProps> = ({setOpen, bookmarkFormData}
     // query to fetch/refetch folders
     const {data: folders = [], refetch: refetchFolders, isRefetching: isFoldersRefetching} = useQuery({
         queryKey: [QUERY_KEYS.useGetUserFoldersQueryKey, session?.user?.id],
-        queryFn: () => getUserFolders({userId: session?.user?.id as string}),
+        queryFn: () => getUserFolders(),
         enabled: !!session?.user?.id,
         select: (response) =>
             response.success && response.data
@@ -99,12 +99,10 @@ const EditBookmarkForm: FC<EditBookmarkFormProps> = ({setOpen, bookmarkFormData}
     }, [tagsForBookmark]);
 
     const updateBookmarkMutation = useMutation({
-        mutationFn: ({formData, bookmarkId, tags}: {
+        mutationFn: ({formData, bookmarkId}: {
             formData: FormData;
-            userId: string,
             bookmarkId: number,
-            tags: Tag[]
-        }) => updateBookmark(formData, bookmarkId, tags),
+        }) => updateBookmark(formData, bookmarkId),
         onSuccess: async (data) => {
             if (data?.success) {
                 setTimeout(() => {
@@ -152,8 +150,6 @@ const EditBookmarkForm: FC<EditBookmarkFormProps> = ({setOpen, bookmarkFormData}
         if (session?.user?.id) {
             updateBookmarkMutation.mutate({
                 formData,
-                userId: session?.user?.id,
-                tags: selectedTags,
                 bookmarkId: bookmarkFormData.id,
             });
         }
@@ -173,7 +169,7 @@ const EditBookmarkForm: FC<EditBookmarkFormProps> = ({setOpen, bookmarkFormData}
         setLoading(true)
         try {
             const metadata = await fetchMetadata(url)
-            if (metadata.title === null && metadata.description === null) {
+            if (!metadata || (metadata.title === null && metadata.description === null)) {
                 toast({
                     title: "Metadata not found",
                     description: "Unable to fetch metadata for the provided URL. Please enter a manual title/description.",
@@ -213,7 +209,7 @@ const EditBookmarkForm: FC<EditBookmarkFormProps> = ({setOpen, bookmarkFormData}
             return
         }
 
-        await createFolders({names: [folderInputValue], userId: session?.user?.id});
+        await createFolders({names: [folderInputValue]});
         await refetchFolders();
         setFolderInputValue("")
     };

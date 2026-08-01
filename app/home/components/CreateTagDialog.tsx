@@ -15,7 +15,6 @@ import ActionButton from "@/app/home/ActionButton";
 import {Input} from "@/components/ui/input";
 import {Button} from "@/components/ui/button"
 import {Badge} from "@/components/ui/badge"
-import {authClient} from "@/lib/auth-client";
 import {createNewTags} from "@/app/actions/tags";
 import {useMutation, useQueryClient} from "@tanstack/react-query";
 import {useToast} from "@/hooks/use-toast"
@@ -32,7 +31,6 @@ const CreateTagDialog = () => {
     const [open, setOpen] = useState(false)
     const [tags, setTags] = useState<string[]>([])
     const [inputValue, setInputValue] = useState("")
-    const {data: session} = authClient.useSession();
     const {toast} = useToast();
     const queryClient = useQueryClient();
 
@@ -43,7 +41,6 @@ const CreateTagDialog = () => {
     const createTagsMutation = useMutation<CreateTagsResponse, Error, void>({
         mutationFn: () => createNewTags({
             tags: tags,
-            userId: session?.user?.id
         }),
         onSuccess: (data) => {
             if (data.success) {

@@ -1,5 +1,5 @@
 import {describe, it, expect, vi, beforeEach} from "vitest";
-import {createNewTags, deleteTag, getFormattedTagsForBookmarks, getUserTags, updateTag} from "../tags";
+import {createNewTags, deleteTag, getFormattedTagsForBookmarks} from "../tags";
 import {prisma} from "@/lib/prisma";
 
 vi.mock("@/lib/auth-server", () => ({

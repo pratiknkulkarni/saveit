@@ -5,7 +5,7 @@ import {QUERY_KEYS} from "@/lib/queryKeys";
 export const useGetUserFoldersQuery = (userId: string | undefined) => {
     return useQuery({
         queryKey: [QUERY_KEYS.useGetUserFoldersQueryKey, userId],
-        queryFn: () => getUserFolders({userId}),
+        queryFn: () => getUserFolders(),
         enabled: !!userId,
         select: (response) =>
             response.success && response.data

@@ -27,7 +27,9 @@ interface TagInputProps {
     }[], Error>>
 }
 
-const TagInput = ({tags, selectedTags, onChange, userId, refetchTags, isTagsRefetching}: TagInputProps) => {
+// userId stays on TagInputProps so the existing call sites keep compiling, but it
+// is no longer destructured — createNewTags derives the user from the session.
+const TagInput = ({tags, selectedTags, onChange, refetchTags, isTagsRefetching}: TagInputProps) => {
     const [open, setOpen] = useState(false);
     const [inputValue, setInputValue] = useState("");
     const selectedTagIds = selectedTags.map((tag) => tag.id);
@@ -49,7 +51,7 @@ const TagInput = ({tags, selectedTags, onChange, userId, refetchTags, isTagsRefe
             })
             return;
         }
-        await createNewTags({tags: [inputValue], userId});
+        await createNewTags({tags: [inputValue]});
         await refetchTags();
         setInputValue("")
     };

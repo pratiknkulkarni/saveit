@@ -6,7 +6,7 @@ import {QUERY_KEYS} from "@/lib/queryKeys";
 export const useGetUserFoldersSidebarQuery = (userId: string | undefined) => {
     return useQuery<GetUserFoldersResponse>({
         queryKey: [QUERY_KEYS.useGetUserFoldersSidebarQuery, userId],
-        queryFn: async () => await getUserFolders({userId}),
+        queryFn: async () => await getUserFolders(),
         enabled: !!userId,
         retry: 3,
         retryDelay: 1000,

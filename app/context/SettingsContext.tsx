@@ -90,7 +90,7 @@ export function SettingsProvider({children}: { children: React.ReactNode }) {
             } else {
                 return {success: false, statusCode: 500, message: result.message};
             }
-        } catch (e) {
+        } catch {
             return {success: false, statusCode: 500, message: "Failed to save settings"};
         }
     }, [pendingChanges]);

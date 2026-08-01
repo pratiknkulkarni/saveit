@@ -10,6 +10,9 @@ export const bookmarkSchema = z.object({
         id: z.number(),
         name: z.string()
     })).optional(),
+    // Set by the edit form only when TagInput actually changes. Without it a
+    // title-only edit would send no tags and wipe every tag on the bookmark.
+    tagsModified: z.boolean().optional(),
 });
 
 export type BookmarkSchemaType = z.infer<typeof bookmarkSchema>;

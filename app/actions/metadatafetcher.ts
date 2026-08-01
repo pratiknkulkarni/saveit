@@ -1,7 +1,7 @@
 "use server"
 
 import {load} from 'cheerio';
-import axios, {AxiosError} from 'axios';
+import axios from 'axios';
 import {URL} from 'url';
 import {performance} from 'perf_hooks';
 import {LRUCache} from 'lru-cache';

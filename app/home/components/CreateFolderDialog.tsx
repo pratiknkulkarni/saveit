@@ -15,7 +15,6 @@ import ActionButton from "@/app/home/ActionButton";
 import {useToast} from "@/hooks/use-toast";
 import {useMutation, useQueryClient} from "@tanstack/react-query"
 import {createFolders} from "@/app/actions/folders";
-import {authClient} from "@/lib/auth-client"
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {QUERY_KEYS} from "@/lib/queryKeys";
@@ -32,7 +31,6 @@ const CreateFolderDialog = () => {
     const [folders, setFolders] = useState<string[]>([])
     const [inputValue, setInputValue] = useState("")
     const {toast} = useToast()
-    const {data: session} = authClient.useSession();
     const queryClient = useQueryClient();
 
     const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -42,7 +40,6 @@ const CreateFolderDialog = () => {
     const createFoldersMutation = useMutation<CreateFoldersResponse, Error, void>({
         mutationFn: () => createFolders({
             names: folders,
-            userId: session?.user?.id
         }),
         onSuccess: async (data) => {
             if (data.success) {

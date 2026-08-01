@@ -14,8 +14,8 @@ const AppearanceSettings = () => {
             <h1 className="text-3xl font-bold mb-6 text-center">Appearance Settings</h1>
             <AppearanceSettingsContainer/>
             <div className="flex justify-center gap-6 w-full py-3">
-                <Button onClick={() => {
-                    const {statusCode} = applySettings();
+                <Button onClick={async () => {
+                    const {statusCode} = await applySettings();
                     if (statusCode === 200) {
                         toast({
                             title: "Settings saved!"

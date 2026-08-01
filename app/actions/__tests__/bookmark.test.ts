@@ -153,6 +153,9 @@ describe("Server Action: createBookmark", () => {
         formData.append("url", "https://update-me.com"); // URL required by schema
         // We are replacing tagOld with tagNew
         formData.append("tags", JSON.stringify([{id: tagNew.id, name: "New Tag"}]));
+        // The edit form sets this whenever TagInput changes; without it the action
+        // leaves existing tags alone.
+        formData.append("tagsModified", "true");
 
         // 4. Call the Action
         const response = await updateBookmark(formData, bookmark.id);
@@ -172,9 +175,45 @@ describe("Server Action: createBookmark", () => {
         expect(updatedBookmark?.BookmarkTags[0].tagId).not.toBe(tagOld.id); // Should NOT be the OLD tag
     });
 
+    it("should PRESERVE tags when the edit did not touch them", async () => {
+        // Regression: a title-only edit sends no `tags` field, which the action used to
+        // parse to [] and treat as truthy — deleting every tag on the bookmark.
+        const tag = await prisma.tag.create({data: {name: "Keep Me", userId: "test-user-id"}});
+
+        const bookmark = await prisma.bookmark.create({
+            data: {
+                title: "Original Title",
+                url: "https://keep-my-tags.com",
+                userId: "test-user-id",
+                BookmarkTags: {
+                    create: [{tag: {connect: {id: tag.id}}}]
+                }
+            }
+        });
+
+        // Exactly what EditBookmarkForm submits when only the title changed:
+        // no `tags` field at all, and tagsModified left at its false default.
+        const formData = new FormData();
+        formData.append("title", "Updated Title");
+        formData.append("url", "https://keep-my-tags.com");
+        formData.append("tagsModified", "false");
+
+        const response = await updateBookmark(formData, bookmark.id);
+        expect(response.success).toBe(true);
+
+        const updated = await prisma.bookmark.findFirst({
+            where: {id: bookmark.id},
+            include: {BookmarkTags: true}
+        });
+
+        expect(updated?.title).toBe("Updated Title");
+        expect(updated?.BookmarkTags).toHaveLength(1);
+        expect(updated?.BookmarkTags[0].tagId).toBe(tag.id);
+    });
+
     it("should BLOCK updating someone else's bookmark", async () => {
         // 1. Create victim data
-        const victim = await prisma.user.create({
+        await prisma.user.create({
             data: {
                 id: "victim-2",
                 name: "V",

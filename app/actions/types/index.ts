@@ -133,7 +133,9 @@ type DeleteBookmarkByUserIdResponse = DeleteBookmarkByUserIdSuccess | DeleteBook
 
 type GetTagsForBookmarkSuccess = {
     success: true,
-    data: BookmarkTags[]
+    // getTagsForBookmark includes the `tag` relation, so the joined tag travels
+    // with each row — BookmarkTags on its own is just {bookmarkId, tagId}.
+    data: (BookmarkTags & { tag: Tag })[]
 }
 type GetTagsForBookmarkError = {
     success: false,
