@@ -5,8 +5,9 @@ Self-hosted bookmark manager ("Save It"). Save a URL → metadata is auto-fetche
 > **In-flight migration.** The repo is mid-way through `MIGRATION_PLAN.md` (Gitea +
 > registry + deploy). Phases 1–6 are done; Phase 7 (Gitea Actions CI) is next.
 > **Read `MIGRATION_STATUS.md` first** — it has the current state, the resume
-> commands, and the open decisions. `origin` is now Gitea, not GitHub, and nothing
-> past `origin/main` (`5f8b356`) has been pushed.
+> commands, and the open decisions. `origin` is now Gitea, not GitHub; `main` is
+> pushed and in sync. No image has been published to the registry yet — that is
+> Phase 7's job.
 
 ## Stack
 
@@ -104,8 +105,8 @@ browser:
 
 ## Known-broken state (updated 2026-08-02, end of session)
 
-All of the below is fixed and merged into local `main`. See `MIGRATION_STATUS.md` for
-what is and is not pushed.
+All of the below is fixed and pushed to `main`. See `MIGRATION_STATUS.md` for the
+open items.
 
 - ~~`next build` fails on ~14 `userId` call sites~~ → fixed; typecheck, lint and build are all clean. Note the build was *also* blocked by 9 ESLint errors, which `MIGRATION_PLAN.md` never mentions.
 - ~~`prisma/migrations/` is empty~~ → the blanket `*.sql` now has a `!prisma/migrations/**/migration.sql` negation, and `20260801154352_init` is committed. It opens with `CREATE EXTENSION IF NOT EXISTS "pg_trgm"`; verified applied (`pg_trgm 1.6` in `\dx`) with no schema drift.

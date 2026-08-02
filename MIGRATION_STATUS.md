@@ -7,17 +7,16 @@
 
 ## TL;DR — where to pick up
 
-You are on branch **`chore/phase6-image`**. The app builds, typechecks, lints clean,
-and `pnpm test:run` is green (**112 passing, 20 files**). Phase 5 closed as a real
-gate. Phase 6 is done: there is a working standalone image that boots, migrates an
-empty database, and serves — **verified by running it, not by inspection**.
+You are on **`main`**, in sync with `origin/main` at `49e9e77`. The app builds,
+typechecks, lints clean, and `pnpm test:run` is green (**112 passing, 20 files**).
+Phase 5 closed as a real gate. Phase 6 is done: there is a working standalone image
+that boots, migrates an empty database, and serves — **verified by running it, not by
+inspection**.
 
-**Nothing from Phase 6 is pushed, and no image has been published to the registry.**
-Those are the two outward-facing steps left; see "Open items".
+**No image has been published to the registry** — that is deliberate. Phase 7's
+`publish` job should push the first real one.
 
-Next action is Phase 7 (Gitea Actions CI). The `publish` job it describes is what
-should push the first real image — doing it by hand now would put a `:latest` in the
-registry that no commit in Gitea corresponds to.
+Next action is Phase 7 (Gitea Actions CI).
 
 ---
 
@@ -25,11 +24,13 @@ registry that no commit in Gitea corresponds to.
 
 | Ref | Commit | Meaning |
 |---|---|---|
-| `origin/main` (Gitea) | `5f8b356` | Phases 1–5 |
-| `main` (local) | `1581610` | + `chore(deps)`, **not pushed** |
-| `chore/phase6-image` | `57580e1` | + Phase 6, **not pushed**. Current branch |
+| `main` = `origin/main` | `49e9e77` | Phases 1–6. Current branch |
+| `chore/phase6-image` | `49e9e77` | fast-forwarded into `main`; safe to delete |
 | `chore/deployability` | `5f8b356` | merged into `main`; safe to delete |
 | `refactor/frontend` | `ff26bb9` | history only. Do not merge |
+
+`main`'s last four commits: `49e9e77` docs · `57580e1` Phase 6 image + compose ·
+`1581610` dead deps · `5f8b356` Phase 5 tests.
 
 Remotes: `origin` = Gitea (`https://gitea.15092021.xyz/pratik/saveit.git`),
 `github` = GitHub with push URL deliberately set to the literal `DISABLED`.
@@ -178,21 +179,17 @@ localhost-based and is for host-side tooling only; it would not resolve in-conta
 
 ## Open items and decisions waiting on you
 
-### 1. Two outward-facing steps are deliberately not done
+### 1. No image has been published — by decision
 
-- **Nothing is pushed.** `main` is one commit ahead of `origin/main`
-  (`chore(deps)`), and `chore/phase6-image` is unpushed on top of that.
-- **No image has been published.** `docker login` to `gitea.15092021.xyz` is already
-  stored and a push would work, but the image was built from a commit that does not
-  exist in Gitea yet, so a `main-<shortsha>` tag would name nothing. Phase 7's
-  `publish` job is the right place for the first real push.
+`docker login` to `gitea.15092021.xyz` is already stored and a push would work, but
+publishing was deliberately left to Phase 7's `publish` job so the first image in the
+registry corresponds to a commit CI actually built. Nothing is blocking it.
 
-### 2. `CLAUDE.md` and the migration docs
+The registry itself is proven: an `alpine` probe was pushed and deleted in Phase 2.
+What is **not** proven is that a ~151 MB image survives the path — see the Cloudflare
+note under "Notes carried forward".
 
-`CLAUDE.md`, `MIGRATION_PLAN.md` and `MIGRATION_STATUS.md` are still untracked. The
-hold (the SQL injection) was cleared long ago — these can be committed whenever.
-
-### 3. Branch protection on `main`
+### 2. Branch protection on `main`
 
 Agreed for after Phase 5, in two stages:
 
