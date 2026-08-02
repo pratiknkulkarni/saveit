@@ -2,6 +2,44 @@ import {beforeEach} from 'vitest';
 import {prisma} from '@/lib/prisma';
 import {execSync} from 'child_process';
 
+// jsdom implements neither of these, but cmdk (the Command palette behind
+// TagInput) and several Radix primitives call them on mount and throw without
+// them. Guarded so a real implementation always wins.
+if (!globalThis.ResizeObserver) {
+    globalThis.ResizeObserver = class ResizeObserver {
+        observe() {
+        }
+
+        unobserve() {
+        }
+
+        disconnect() {
+        }
+    };
+}
+
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = function scrollIntoView() {
+    };
+}
+
+if (typeof window !== 'undefined' && !window.matchMedia) {
+    window.matchMedia = (query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: () => {
+        },
+        removeListener: () => {
+        },
+        addEventListener: () => {
+        },
+        removeEventListener: () => {
+        },
+        dispatchEvent: () => false,
+    }) as MediaQueryList;
+}
+
 try {
     // `migrate deploy`, not `db push`: this is the same path containers take on
     // boot, so the tests also prove the committed migrations apply cleanly and

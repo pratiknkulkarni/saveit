@@ -1,5 +1,5 @@
 import {describe, it, expect, vi, beforeEach} from "vitest";
-import {createNewTags, deleteTag, getFormattedTagsForBookmarks} from "../tags";
+import {createNewTags, deleteTag, getFormattedTagsForBookmarks, updateTag} from "../tags";
 import {prisma} from "@/lib/prisma";
 
 vi.mock("@/lib/auth-server", () => ({
@@ -100,6 +100,48 @@ describe("Server Action: Tags", () => {
 
             const link = await prisma.bookmarkTags.findFirst({where: {tagId: tag.id}});
             expect(link).toBeNull();
+        });
+    });
+
+    // updateTag had no coverage at all; folder rename was already tested but the
+    // tag equivalent was not. Phase 5 smoke item 3 includes renaming.
+    describe("updateTag", () => {
+        it("should rename a tag", async () => {
+            const tag = await prisma.tag.create({data: {name: "Old Name", userId: "tag-user-id"}});
+
+            const response = await updateTag({tagId: tag.id, newTagName: "New Name"});
+            expect(response.success).toBe(true);
+
+            const dbTag = await prisma.tag.findUnique({where: {id: tag.id}});
+            expect(dbTag?.name).toBe("New Name");
+        });
+
+        it("should NOT rename another user's tag", async () => {
+            await prisma.user.create({
+                data: {
+                    id: "other-tag-user",
+                    name: "Other",
+                    email: "other-tags@test.com",
+                    emailVerified: true,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                }
+            });
+            const tag = await prisma.tag.create({data: {name: "Theirs", userId: "other-tag-user"}});
+
+            const response = await updateTag({tagId: tag.id, newTagName: "Hijacked"});
+            expect(response.success).toBe(false);
+
+            const dbTag = await prisma.tag.findUnique({where: {id: tag.id}});
+            expect(dbTag?.name).toBe("Theirs");
+        });
+
+        it("should reject renaming to a name the user already has", async () => {
+            await prisma.tag.create({data: {name: "Existing", userId: "tag-user-id"}});
+            const tag = await prisma.tag.create({data: {name: "Rename Me", userId: "tag-user-id"}});
+
+            const response = await updateTag({tagId: tag.id, newTagName: "Existing"});
+            expect(response.success).toBe(false);
         });
     });
 });
