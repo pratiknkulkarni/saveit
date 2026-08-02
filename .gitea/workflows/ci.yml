@@ -1,0 +1,170 @@
+# Gitea Actions CI. Deliberately `.gitea/workflows/`, not `.github/workflows/`:
+# the push mirror copies these files to GitHub, where a `.github/` workflow would
+# trigger GitHub-side runs we do not want.
+#
+# The only registered runner is a Raspberry Pi 4 (label `pi-arm64`), so everything
+# here — including the published image — is linux/arm64.
+#
+# NOTE ON SHAPE: pratik/lightcurve splits this into ci.yml + release.yml, and that
+# split is fine there because its release job only smoke-builds. Here `publish` is
+# gated on `needs: verify` instead, in one file, so an image can never reach the
+# registry without the test suite having passed. `main` has no branch protection
+# yet, so a direct push to it is possible and must not publish unverified. Split it
+# once protection guarantees the PR path.
+
+name: CI
+
+# Push-only, on every branch. Adding `pull_request:` as well would run the whole
+# suite twice for any branch that has a PR open, and a full run on a Pi 4 is
+# 15-30 minutes. Status still attaches to each commit SHA, so this works fine as a
+# required status check when branch protection is turned on later.
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Never cancel a release mid-push: a half-written manifest is worse than a queued
+  # run. Superseded branch pushes are fine to drop.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: pi-arm64
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: saveit
+          POSTGRES_PASSWORD: saveit
+          POSTGRES_DB: saveit_test
+        options: >-
+          --health-cmd "pg_isready -U saveit -d saveit_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Both point at the same throwaway database on purpose. The rule that
+      # TEST_DATABASE_URL must differ from DATABASE_URL exists because
+      # tests/setup.ts TRUNCATEs every table in beforeEach — which matters for a
+      # developer's local data and not at all for a container that is destroyed
+      # when the job ends.
+      DATABASE_URL: postgresql://saveit:saveit@postgres:5432/saveit_test?schema=public
+      TEST_DATABASE_URL: postgresql://saveit:saveit@postgres:5432/saveit_test?schema=public
+      # `next build` evaluates app/page.tsx, which imports lib/auth. Never a real secret.
+      BETTER_AUTH_SECRET: ci-placeholder-not-a-real-secret
+      NEXT_TELEMETRY_DISABLED: "1"
+      # corepack downloads the pinned pnpm on first use; without this it can stop to
+      # ask for confirmation and hang the job.
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # corepack takes the version from package.json's "packageManager" (pnpm@9.15.9).
+      # Do not `corepack prepare pnpm@latest` — it would silently ignore the pin.
+      - name: Enable pnpm
+        run: corepack enable
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma generate
+
+      # `services.options` health flags are honoured by current act_runner, but an
+      # older one ignores them silently and the first query then races the database.
+      - name: Wait for Postgres
+        run: |
+          probe='const s=require("net").connect(5432,"postgres");
+                 s.setTimeout(2000);
+                 s.on("connect",()=>process.exit(0));
+                 s.on("error",()=>process.exit(1));
+                 s.on("timeout",()=>process.exit(1));'
+          for _ in $(seq 1 30); do
+            if node -e "$probe"; then
+              echo "postgres is accepting connections"; exit 0
+            fi
+            sleep 2
+          done
+          echo "postgres never became reachable on host 'postgres':5432"; exit 1
+
+      # Validates the committed migrations and that pg_trgm gets created — the same
+      # path the container entrypoint takes on boot.
+      - run: pnpm prisma migrate deploy
+
+      # Drift guard: compares the live schema built from migrations against
+      # schema.prisma. --from-schema-datasource avoids needing a shadow database.
+      - name: Check for schema drift
+        run: |
+          pnpm prisma migrate diff \
+            --from-schema-datasource ./prisma/schema.prisma \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --exit-code
+
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test:run
+
+      # Runs tsc AND eslint again internally; lint errors fail the build, so this is
+      # not redundant with the two steps above.
+      - run: pnpm build
+
+      - name: Audit production dependencies
+        continue-on-error: true
+        run: pnpm audit --prod --audit-level high
+
+  publish:
+    needs: verify
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: pi-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # secrets.GITEA_TOKEN does NOT work here. Gitea 1.27's package registry
+      # authenticates users and PATs, not the ephemeral per-task Actions token, so
+      # GET /v2/ returns "unauthorized" even with `permissions: packages: write`.
+      # REGISTRY_TOKEN is a user-level secret (a PAT with write:package), which is
+      # why this needs nothing configured per-repository.
+      #
+      # The username must be the token's owner — repository_owner, not actor, since
+      # actor is whoever merged.
+      - name: Log in to the Gitea registry
+        run: |
+          echo "${{ secrets.REGISTRY_TOKEN }}" \
+            | docker login gitea.15092021.xyz \
+                -u "${{ github.repository_owner }}" --password-stdin
+
+      - name: Compute image tags
+        id: meta
+        run: |
+          IMAGE=gitea.15092021.xyz/pratik/saveit
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAGS="--tag ${IMAGE}:${{ github.ref_name }}"
+          else
+            TAGS="--tag ${IMAGE}:latest --tag ${IMAGE}:main-$(echo "${{ github.sha }}" | cut -c1-7)"
+          fi
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            ${{ steps.meta.outputs.tags }} \
+            --cache-from type=registry,ref=${{ steps.meta.outputs.image }}:buildcache \
+            --cache-to   type=registry,ref=${{ steps.meta.outputs.image }}:buildcache,mode=max \
+            --push \
+            .

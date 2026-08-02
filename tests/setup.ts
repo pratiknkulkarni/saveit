@@ -1,6 +1,7 @@
 import {beforeEach} from 'vitest';
 import {prisma} from '@/lib/prisma';
 import {execSync} from 'child_process';
+import {createRequire} from 'module';
 
 // jsdom implements neither of these, but cmdk (the Command palette behind
 // TagInput) and several Radix primitives call them on mount and throw without
@@ -40,16 +41,27 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
     }) as MediaQueryList;
 }
 
+// `migrate deploy`, not `db push`: this is the same path containers take on
+// boot, so the tests also prove the committed migrations apply cleanly and
+// that pg_trgm exists. The beforeEach TRUNCATE already skips _prisma_migrations.
+//
+// Resolve the CLI entry rather than shelling `npx`, which is not on PATH under
+// every runner (the Docker entrypoint invokes the same build/index.js).
+const prismaCli = createRequire(import.meta.url).resolve('prisma/build/index.js');
+
 try {
-    // `migrate deploy`, not `db push`: this is the same path containers take on
-    // boot, so the tests also prove the committed migrations apply cleanly and
-    // that pg_trgm exists. The beforeEach TRUNCATE already skips _prisma_migrations.
-    execSync('npx prisma migrate deploy --schema=./prisma/schema.prisma', {
+    execSync(`node ${JSON.stringify(prismaCli)} migrate deploy --schema=./prisma/schema.prisma`, {
         env: process.env, // this is where the vitest.config.mts injects that variable
-        stdio: 'ignore'
+        stdio: 'pipe'
     });
 } catch (e) {
-    console.error("Failed to migrate test database schema", e);
+    // Do not swallow this. Without a migrated schema every DB-backed suite fails
+    // with a confusing "table does not exist" cascade; one clear error is better.
+    const {stderr, stdout} = e as { stderr?: Buffer; stdout?: Buffer };
+    throw new Error(
+        `Failed to migrate the test database. Is TEST_DATABASE_URL reachable?\n` +
+        `${stderr?.toString() || ''}${stdout?.toString() || ''}`
+    );
 }
 
 beforeEach(async () => {
