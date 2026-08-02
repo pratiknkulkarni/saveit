@@ -1,15 +1,62 @@
-services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: saveit
-    command: sh -c "pnpm prisma generate && pnpm prisma migrate deploy && pnpm start"
-    restart: always
-    env_file:
-      - .env
-    ports:
-      - "${PORT}:${PORT}"
-    volumes:
-      - ./.env:/app/.env
+# Production stack. Only this file plus a filled-in .env are needed on the target
+# host — no source tree.
+#
+#   echo "$GITEA_TOKEN" | docker login gitea.15092021.xyz -u pratik --password-stdin
+#   docker compose pull && docker compose up -d
+#
+# Update:   docker compose pull && docker compose up -d
+# Rollback: IMAGE_TAG=main-<shortsha> docker compose up -d   (code only — Prisma
+#           migrations are forward-only, so pg_dump before any destructive one.)
+#
+# The app image is pulled, never built here; `docker build` lives in CI (Phase 7).
+# For a local image test, build with the same tag:
+#   docker build -t gitea.15092021.xyz/pratik/saveit:latest .
 
+# Pinned so this stack is a distinct Compose project from docker-compose.dev.yml.
+# Both default their project name to the directory ("saveit") and both define a
+# `postgres` service, so without this an `up` here adopts and recreates the dev
+# database container.
+name: saveit
+
+services:
+    postgres:
+        image: postgres:16-alpine
+        container_name: saveit-postgres
+        restart: unless-stopped
+        environment:
+            POSTGRES_USER: ${POSTGRES_USER:-saveit}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+            POSTGRES_DB: ${POSTGRES_DB:-saveit}
+        volumes:
+            - saveit-pgdata:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-saveit} -d ${POSTGRES_DB:-saveit}"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+            start_period: 10s
+
+    app:
+        image: gitea.15092021.xyz/pratik/saveit:${IMAGE_TAG:-latest}
+        container_name: saveit
+        restart: unless-stopped
+        depends_on:
+            postgres:
+                condition: service_healthy
+        environment:
+            # Built from POSTGRES_* rather than read from .env on purpose: the
+            # DATABASE_URL in .env points at localhost for host-side tooling, which
+            # would not resolve inside this container. The host here is the service name.
+            DATABASE_URL: postgresql://${POSTGRES_USER:-saveit}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-saveit}?schema=public
+            BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set in .env}
+            BETTER_AUTH_TRUSTED_URLS: ${BETTER_AUTH_TRUSTED_URLS:-http://localhost:33449}
+            # Read at runtime by next-runtime-env (<PublicEnvScript/>), never a build arg.
+            NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:33449}
+            LOG_LEVEL: ${LOG_LEVEL:-info}
+            NODE_ENV: production
+        ports:
+            # The container always listens on 33449; only the host port is configurable.
+            - "${APP_PORT:-33449}:33449"
+
+volumes:
+    saveit-pgdata:

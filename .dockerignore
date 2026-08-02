@@ -1,2 +1,46 @@
+# Keep the build context small. NOTE: prisma/schema.prisma and prisma/migrations/
+# must NEVER be excluded — the image generates the client from the schema and the
+# entrypoint runs `migrate deploy` against the migrations.
+
+# Dependencies and build output — reinstalled/rebuilt inside the image
+node_modules
+**/node_modules
+.next
+**/.next
+out
+build
+
+# VCS and CI
+.git
+.gitignore
+.gitattributes
+.github
+.gitea
+
+# Secrets — DATABASE_URL is passed as a build ARG, everything else at runtime
 .env
 .env.*
+!.env.example
+
+# Tests: not run during the image build
+tests
+**/__tests__
+vitest.config.mts
+
+# Dead SQLite-era seed data (python/insert.sql alone is ~440 KB)
+python
+scripts
+
+# Compose files and docs describe the deploy, they are not part of it
+docker-compose*.yml
+Dockerfile
+.dockerignore
+*.md
+
+# Editor / OS noise
+.idea
+.vscode
+.DS_Store
+*.pem
+*.log
+coverage

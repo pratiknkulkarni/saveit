@@ -7,6 +7,10 @@
 # saveit_test is required by TEST_DATABASE_URL: tests/setup.ts TRUNCATEs every table
 # in beforeEach, so it must never point at the same database as DATABASE_URL.
 
+# Distinct Compose project from docker-compose.yml — see the note there. Without it
+# the two stacks adopt each other's `postgres` container.
+name: saveit-dev
+
 services:
     postgres:
         image: postgres:16-alpine

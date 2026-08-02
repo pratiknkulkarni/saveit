@@ -2,13 +2,9 @@ import type {NextConfig} from "next";
 
 
 const nextConfig: NextConfig = {
-    // output: "standalone",
-    env: {
-        PORT: process.env.PORT || "3000",
-    },
-    publicRuntimeConfig: {
-        port: process.env.PORT || 3000
-    },
+    // Emits .next/standalone with its own server.js — the container runs that,
+    // not `next start`. Requires public/ and .next/static to be copied alongside.
+    output: "standalone",
     images: {
         remotePatterns: [
             {
