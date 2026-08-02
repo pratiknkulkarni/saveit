@@ -1,22 +1,25 @@
 # Migration status — handoff
 
 > Written 2026-08-01, updated 2026-08-02. Companion to `MIGRATION_PLAN.md`.
-> **Phases 1–6 are done. Phase 7 (Gitea Actions CI) is next.**
+> **Phases 1–7 are done. Phase 8 (deploy) is next.**
 
 ---
 
 ## TL;DR — where to pick up
 
-You are on **`main`**, in sync with `origin/main` at `49e9e77`. The app builds,
-typechecks, lints clean, and `pnpm test:run` is green (**112 passing, 20 files**).
-Phase 5 closed as a real gate. Phase 6 is done: there is a working standalone image
-that boots, migrates an empty database, and serves — **verified by running it, not by
-inspection**.
+You are on **`main`**, in sync with `origin/main`. The app builds, typechecks, lints
+clean, and `pnpm test:run` is green (**112 passing, 20 files**) — on this machine and
+on the CI runner.
 
-**No image has been published to the registry** — that is deliberate. Phase 7's
-`publish` job should push the first real one.
+**CI is live and the image is published.** A push to any branch runs `verify`; a push
+to `main` (or a `v*` tag) runs `verify` then `publish`, which buildx-pushes
+`latest` + `main-<shortsha>` + `buildcache` to `gitea.15092021.xyz/pratik/saveit`.
 
-Next action is Phase 7 (Gitea Actions CI).
+Next action is Phase 8 (deploy on the target host), then Phase 9 (bump `next`).
+
+⚠️ **Images are `linux/arm64` only.** The sole runner is a Raspberry Pi 4
+(label `pi-arm64`), so the deploy target must be arm64. An amd64 host cannot even
+`docker compose pull` — it fails with `no matching manifest for linux/amd64`.
 
 ---
 
@@ -102,6 +105,11 @@ regenerate the secret unless you want to invalidate existing sessions.
 | **No engine download at boot** | engine mtimes inside the running container match the image build time |
 | **Build ARG does not leak** | `docker inspect` `.Config.Env` has no `DATABASE_URL` |
 | **The two compose stacks coexist** | dev and prod postgres both `healthy` at once after the project-name fix |
+| **CI runs on the Pi** | `verify` green on a branch push and on `main`; service-container Postgres, corepack/pnpm and all 112 tests work on arm64 |
+| **CI publishes** | `latest`, `main-1e07bc0` and `buildcache` all landed in the registry |
+| **A real image survives the registry round-trip** | pulled back down and inspected: `Arch: arm64`, `User: nextjs`. So the Cloudflare body-cap risk is moot on the LAN |
+| **The published image runs** | pulled arm64 image under QEMU on this x86_64 box: healthy, `No pending migrations`, `/welcome`+`/login`+`/register` 200, sign-up 200 with the row landing, mixed-case sign-in 200, `uname -m` = `aarch64` as `nextjs` |
+| **The Dockerfile builds on arm64** | full `buildx --platform linux/arm64` cross-build exits 0 |
 
 ### What is still browser-only
 
@@ -111,6 +119,41 @@ path underneath them is covered by tests, and now also by a container that serve
 routes and writes to Postgres.
 
 ---
+
+## Phase 7 — what the infrastructure actually looks like
+
+The plan said "a runner is already registered → go straight to the workflow". True,
+but three details it does not mention decided the whole design:
+
+1. **The runner is registered site-level, not repo- or user-level.** Both
+   `/repos/pratik/saveit/actions/runners` and `/user/actions/runners` return
+   `total_count: 0`, and `/admin/...` is 403 because `pratik` is not an admin. It
+   works regardless — do not go hunting for a missing runner.
+2. **It is a Raspberry Pi 4, label `pi-arm64`.** Everything is `linux/arm64`.
+3. **`secrets.GITEA_TOKEN` does not work against the package registry.** Gitea 1.27
+   authenticates users and PATs there, not the ephemeral per-task Actions token, so
+   `GET /v2/` returns `unauthorized` even with `permissions: packages: write`.
+   `REGISTRY_TOKEN` (a user-level PAT with `write:package`) is what works — it is
+   user-level, so saveit inherited it with nothing configured per-repository.
+
+Two deviations from `MIGRATION_PLAN.md` worth knowing:
+
+- **The plan says avoid `docker/build-push-action` because buildx setup is a common
+  act_runner failure.** Not true on this runner — `pratik/lightcurve` uses
+  `docker/setup-buildx-action@v3` across 31 green runs, so this workflow does too,
+  with a registry-backed `buildcache`.
+- **`verify` and `publish` live in one file**, unlike lightcurve's ci.yml/release.yml
+  split. `main` has no branch protection, so a direct push to it must not be able to
+  publish an unverified image; `publish` is gated on `needs: verify`. Split them once
+  protection guarantees the PR path.
+
+Measured on the Pi: **`verify` 10.5–13 min, `publish` 10.9 min.** `paths-ignore`
+skips `**.md` so a docs commit does not burn 22 minutes republishing an identical image.
+
+In CI, `DATABASE_URL` and `TEST_DATABASE_URL` deliberately point at the *same*
+throwaway database. The rule that they must differ exists because `tests/setup.ts`
+TRUNCATEs every table in `beforeEach` — which matters for local data, not for a
+service container destroyed when the job ends.
 
 ## Phase 6 — things that were not in the plan
 
@@ -179,15 +222,12 @@ localhost-based and is for host-side tooling only; it would not resolve in-conta
 
 ## Open items and decisions waiting on you
 
-### 1. No image has been published — by decision
+### 1. Phase 8 — deploy
 
-`docker login` to `gitea.15092021.xyz` is already stored and a push would work, but
-publishing was deliberately left to Phase 7's `publish` job so the first image in the
-registry corresponds to a commit CI actually built. Nothing is blocking it.
-
-The registry itself is proven: an `alpine` probe was pushed and deleted in Phase 2.
-What is **not** proven is that a ~151 MB image survives the path — see the Cloudflare
-note under "Notes carried forward".
+The image is published and the update loop is proven locally. What remains is running
+it on the real host: `docker login`, then `docker compose pull && docker compose up -d`
+with a filled-in `.env`. **`pull` alone changes nothing** — the `up` is what recreates
+the container. Also still missing: a `pg_dump | gzip` backup cron. Nothing exists today.
 
 ### 2. Branch protection on `main`
 

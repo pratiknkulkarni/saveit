@@ -24,6 +24,13 @@ on:
       - "**"
     tags:
       - "v*"
+    # A docs-only commit would otherwise burn ~22 minutes of Pi time and republish
+    # a byte-identical image under a new tag. Anything that can change the build is
+    # still covered — this only skips prose.
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+      - ".gitignore"
 
 concurrency:
   group: ci-${{ github.ref }}

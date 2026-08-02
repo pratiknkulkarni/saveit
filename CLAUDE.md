@@ -3,11 +3,14 @@
 Self-hosted bookmark manager ("Save It"). Save a URL → metadata is auto-fetched → organize by folders/tags, favorite/archive, fuzzy search.
 
 > **In-flight migration.** The repo is mid-way through `MIGRATION_PLAN.md` (Gitea +
-> registry + deploy). Phases 1–6 are done; Phase 7 (Gitea Actions CI) is next.
+> registry + deploy). Phases 1–7 are done; Phase 8 (deploy) is next.
 > **Read `MIGRATION_STATUS.md` first** — it has the current state, the resume
-> commands, and the open decisions. `origin` is now Gitea, not GitHub; `main` is
-> pushed and in sync. No image has been published to the registry yet — that is
-> Phase 7's job.
+> commands, and the open decisions. `origin` is now Gitea, not GitHub.
+>
+> **CI is live** (`.gitea/workflows/ci.yml`): any branch push runs `verify`; a push to
+> `main` or a `v*` tag also runs `publish`, which pushes `latest` + `main-<shortsha>`
+> to `gitea.15092021.xyz/pratik/saveit`. The only runner is a Raspberry Pi 4, so
+> **every published image is `linux/arm64`** — an amd64 host cannot pull it at all.
 
 ## Stack
 
