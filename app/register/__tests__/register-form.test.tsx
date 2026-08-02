@@ -14,6 +14,22 @@ vi.mock("@/hooks/use-toast", () => ({
     useToast: vi.fn()
 }));
 
+// RegisterForm calls useRouter() at the top level, which throws
+// "invariant expected app router to be mounted" outside a Next.js render.
+// vi.hoisted keeps the spy reachable from the hoisted vi.mock factory.
+const {mockPush} = vi.hoisted(() => ({mockPush: vi.fn()}));
+
+vi.mock("next/navigation", () => ({
+    useRouter: () => ({
+        push: mockPush,
+        replace: vi.fn(),
+        refresh: vi.fn(),
+        back: vi.fn(),
+        forward: vi.fn(),
+        prefetch: vi.fn(),
+    })
+}));
+
 describe("register-form", () => {
     const mockToast = vi.fn();
     const mockDismiss = vi.fn();
@@ -132,5 +148,6 @@ describe("register-form", () => {
             title: "Success!",
             description: "User account created successfully."
         });
+        expect(mockPush).toHaveBeenCalledWith("/login");
     })
 });

@@ -53,18 +53,21 @@ describe("HomeLayout", () => {
         expect(getByText("Test Child")).toBeDefined()
     })
 
-    it("collapses sidebar on desktop by default", () => {
+    // FolderSidebar's mount effect expands the sidebar on desktop (w-64) and
+    // collapses it on mobile (w-0). These four cases previously asserted the
+    // inverse of that.
+    it("expands sidebar on desktop by default", () => {
         vi.mocked(useIsMobile).mockReturnValue(false)
         const { getByTestId } = render(<HomeLayout>Test Content</HomeLayout>)
 
-        expect(getByTestId("sidebar").textContent).toBe("Collapsed")
+        expect(getByTestId("sidebar").textContent).toBe("Expanded")
     })
 
-    it("expands sidebar on mobile by default", () => {
+    it("collapses sidebar on mobile by default", () => {
         vi.mocked(useIsMobile).mockReturnValue(true)
         const { getByTestId } = render(<HomeLayout>Test Content</HomeLayout>)
 
-        expect(getByTestId("sidebar").textContent).toBe("Expanded")
+        expect(getByTestId("sidebar").textContent).toBe("Collapsed")
     })
 
     it("toggles sidebar when header button is clicked", () => {
@@ -73,22 +76,21 @@ describe("HomeLayout", () => {
 
         const toggleButton = getByText("Toggle Sidebar")
 
-        expect(getByTestId("sidebar").textContent).toBe("Collapsed")
-
-        fireEvent.click(toggleButton)
         expect(getByTestId("sidebar").textContent).toBe("Expanded")
 
         fireEvent.click(toggleButton)
         expect(getByTestId("sidebar").textContent).toBe("Collapsed")
+
+        fireEvent.click(toggleButton)
+        expect(getByTestId("sidebar").textContent).toBe("Expanded")
     })
 
     it("renders main content correctly on mobile with collapsed sidebar", () => {
         vi.mocked(useIsMobile).mockReturnValue(true)
         const { getByText } = render(<HomeLayout>Test Content</HomeLayout>)
 
-        const toggleButton = getByText("Toggle Sidebar")
-        fireEvent.click(toggleButton) // Collapse sidebar on mobile
-
+        // Mobile already starts collapsed, which is the branch that renders
+        // children; expanding it swaps them out for the tag list instead.
         expect(getByText("Test Content")).toBeDefined()
     })
 

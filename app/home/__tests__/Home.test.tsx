@@ -8,12 +8,26 @@ vi.mock("@/app/home/components/BookmarkList", () => ({
     default: () => <div data-testid="bookmark-list">BookmarkList</div>,
 }))
 
+// TagList is a default export — mocking it as a named one left `default`
+// undefined, so the desktop branch rendered nothing.
 vi.mock("@/app/home/components/TagList", () => ({
-    TagList: () => <div data-testid="tag-list">TagList</div>,
+    default: () => <div data-testid="tag-list">TagList</div>,
 }))
 
 vi.mock("@/hooks/use-mobile", () => ({
     useIsMobile: vi.fn(),
+}))
+
+// Home reads settings.showTags and the session. Stub both rather than wrapping in
+// the real SettingsProvider, which would fetch settings over the network.
+vi.mock("@/app/context/SettingsContext", () => ({
+    useSettings: () => ({settings: {showTags: true}}),
+}))
+
+vi.mock("@/lib/auth-client", () => ({
+    authClient: {
+        useSession: () => ({data: {user: {id: "test-user-id"}}}),
+    },
 }))
 
 describe("Home", () => {

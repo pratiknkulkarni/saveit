@@ -16,6 +16,28 @@ type RawSearchResult = {
     rank: number;
 };
 
+/**
+ * `%` and `_` are LIKE wildcards, so a user searching for "100%" would otherwise
+ * match anything starting with "100". Backslash is Postgres' default LIKE escape
+ * character, which is why it has to be escaped first.
+ */
+const escapeLikeWildcards = (value: string) =>
+    value.replace(/[\\%_]/g, (char) => `\\${char}`);
+
+/**
+ * Collects bind values for one `$queryRawUnsafe` call. `bind(value)` appends the
+ * value and returns the `$n` placeholder that refers to it, so the SQL below can
+ * never contain user input — only placeholders. Each of the three queries is a
+ * separate call and therefore needs its own binder, since `$n` numbering restarts.
+ */
+const createBinder = () => {
+    const values: unknown[] = [];
+    return {
+        values,
+        bind: (value: unknown) => `$${values.push(value)}`,
+    };
+};
+
 export const searchAll = async (
     searchTerm: string | undefined,
     filter: Filter = "all",
@@ -41,15 +63,20 @@ export const searchAll = async (
         const searchFolderMeta = filter === 'all';
         const searchTagMeta = filter === 'all';
 
-        const textMatch = (col: string) => {
-            if (isExact) return `${col} ILIKE '${query}'`;
-            if (isStart) return `${col} ILIKE '${query}%'`;
-            return `(word_similarity('${query}', ${col}) > ${threshold} OR ${col} ILIKE '%${query}%')`;
+        const escapedQuery = escapeLikeWildcards(query);
+
+        // `threshold` stays interpolated deliberately: it is a numeric literal
+        // chosen by the ternary above and never carries user input. Binding it
+        // would force a cast, since word_similarity() returns `real`.
+        const textMatch = (bind: (value: unknown) => string, col: string) => {
+            if (isExact) return `${col} ILIKE ${bind(escapedQuery)}`;
+            if (isStart) return `${col} ILIKE ${bind(`${escapedQuery}%`)}`;
+            return `(word_similarity(${bind(query)}, ${col}) > ${threshold} OR ${col} ILIKE ${bind(`%${escapedQuery}%`)})`;
         };
 
-        const rankCalc = (col: string) => {
+        const rankCalc = (bind: (value: unknown) => string, col: string) => {
             if (!isFuzzy) return "1";
-            return `word_similarity('${query}', ${col})`;
+            return `word_similarity(${bind(query)}, ${col})`;
         };
 
         const promises = [];
@@ -58,24 +85,25 @@ export const searchAll = async (
         // QUERY 1: BOOKMARKS
         // =========================================================
         if (shouldQueryBookmarks) {
+            const {values, bind} = createBinder();
             const bookmarkSQL = `
                 WITH MatchingIds AS (SELECT b.id,
                                             GREATEST(
-                                                    ${rankCalc('b.title')},
-                                                    ${rankCalc('b.description')},
-                                                    ${rankCalc('b.url')}
+                                                    ${rankCalc(bind, 'b.title')},
+                                                    ${rankCalc(bind, 'b.description')},
+                                                    ${rankCalc(bind, 'b.url')}
                                             ) as rank
                                      FROM "Bookmark" b
                                               LEFT JOIN "Folder" f ON b."folderId" = f.id
                                               LEFT JOIN "BookmarkTags" bt ON b.id = bt."bookmarkId"
                                               LEFT JOIN "Tag" t ON bt."tagId" = t.id
-                                     WHERE b."userId" = '${user.id}'
+                                     WHERE b."userId" = ${bind(user.id)}
                                        AND (
-                                         (${searchTitle} AND ${textMatch('b.title')}) OR
-                                         (${searchDesc} AND ${textMatch('b.description')}) OR
-                                         (${searchUrl} AND ${textMatch('b.url')}) OR
-                                         (${searchFolderMeta} AND f.name IS NOT NULL AND ${textMatch('f.name')}) OR
-                                         (${searchTagMeta} AND t.name IS NOT NULL AND ${textMatch('t.name')})
+                                         (${searchTitle} AND ${textMatch(bind, 'b.title')}) OR
+                                         (${searchDesc} AND ${textMatch(bind, 'b.description')}) OR
+                                         (${searchUrl} AND ${textMatch(bind, 'b.url')}) OR
+                                         (${searchFolderMeta} AND f.name IS NOT NULL AND ${textMatch(bind, 'f.name')}) OR
+                                         (${searchTagMeta} AND t.name IS NOT NULL AND ${textMatch(bind, 't.name')})
                                          )
                                      GROUP BY b.id
                                      ORDER BY rank DESC
@@ -96,49 +124,51 @@ export const searchAll = async (
                 GROUP BY b.id, f.name, m.rank
                 ORDER BY m.rank DESC
             `;
-            promises.push(prisma.$queryRawUnsafe<RawSearchResult[]>(bookmarkSQL));
+            promises.push(prisma.$queryRawUnsafe<RawSearchResult[]>(bookmarkSQL, ...values));
         }
 
         // =========================================================
         // QUERY 2: FOLDERS
         // =========================================================
         if (shouldQueryFolders) {
+            const {values, bind} = createBinder();
             const folderSQL = `
                 SELECT id,
-                       'folder'            as type,
-                       name                as title,
-                       ''                  as description,
-                       ''                  as url,
-                       ''                  as folder,
-                       ''                  as tags,
-                       ${rankCalc('name')} as rank
+                       'folder'                  as type,
+                       name                      as title,
+                       ''                        as description,
+                       ''                        as url,
+                       ''                        as folder,
+                       ''                        as tags,
+                       ${rankCalc(bind, 'name')} as rank
                 FROM "Folder"
-                WHERE "userId" = '${user.id}'
-                  AND ${textMatch('name')}
+                WHERE "userId" = ${bind(user.id)}
+                  AND ${textMatch(bind, 'name')}
                 LIMIT 20
             `;
-            promises.push(prisma.$queryRawUnsafe<RawSearchResult[]>(folderSQL));
+            promises.push(prisma.$queryRawUnsafe<RawSearchResult[]>(folderSQL, ...values));
         }
 
         // =========================================================
         // QUERY 3: TAGS
         // =========================================================
         if (shouldQueryTags) {
+            const {values, bind} = createBinder();
             const tagSQL = `
                 SELECT id,
-                       'tag'               as type,
-                       name                as title,
-                       ''                  as description,
-                       ''                  as url,
-                       ''                  as folder,
-                       ''                  as tags,
-                       ${rankCalc('name')} as rank
+                       'tag'                     as type,
+                       name                      as title,
+                       ''                        as description,
+                       ''                        as url,
+                       ''                        as folder,
+                       ''                        as tags,
+                       ${rankCalc(bind, 'name')} as rank
                 FROM "Tag"
-                WHERE "userId" = '${user.id}'
-                  AND ${textMatch('name')}
+                WHERE "userId" = ${bind(user.id)}
+                  AND ${textMatch(bind, 'name')}
                 LIMIT 20
             `;
-            promises.push(prisma.$queryRawUnsafe<RawSearchResult[]>(tagSQL));
+            promises.push(prisma.$queryRawUnsafe<RawSearchResult[]>(tagSQL, ...values));
         }
 
         const results = await Promise.all(promises);
