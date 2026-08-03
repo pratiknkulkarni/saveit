@@ -16,6 +16,14 @@ export const auth = betterAuth({
     emailAndPassword: {
         enabled: true,
     },
+    user: {
+        // No email delivery is configured in this app, so per the better-auth docs,
+        // omitting sendDeleteAccountVerification makes deletion immediate once the
+        // current password is verified, rather than a token-based email flow.
+        deleteUser: {
+            enabled: true,
+        },
+    },
     trustedOrigins: trustedURLs,
     secret: secret,
 });
