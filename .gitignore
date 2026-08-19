@@ -52,3 +52,5 @@ identifier.sqlite
 # ...but Prisma migrations must be committed, or `migrate deploy` applies nothing
 # and pg_trgm never gets created.
 !prisma/migrations/**/migration.sql
+# JetBrains
+.idea/
