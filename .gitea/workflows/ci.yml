@@ -31,6 +31,9 @@ on:
       - "**.md"
       - "LICENSE"
       - ".gitignore"
+      # README screenshots. Swapping one cannot change what gets built.
+      - "media/**"
+      - ".gitea/ISSUE_TEMPLATE/**"
 
 concurrency:
   group: ci-${{ github.ref }}
