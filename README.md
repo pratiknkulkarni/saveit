@@ -7,6 +7,10 @@ trigram matching, so it still finds things when I only half-remember the title.
 One Next.js app, one Postgres database, `docker compose up -d`. It's been running on
 a Raspberry Pi in my homelab since May 2025.
 
+<p align="center">
+  <img src="media/home.png" alt="The bookmark list, with folders on the left and tags on the right" width="100%">
+</p>
+
 ## Why I built it
 
 My browser bookmarks had turned into a place links went to be forgotten. A flat list
@@ -20,17 +24,30 @@ the app exists to support those two.
 
 ## What it does
 
-**Save.** Paste a URL, it fetches the page and pulls out the title, description and
-preview image. If that fails the bookmark still saves and I fill it in myself. It
-won't fetch private or link-local addresses, so it can't be aimed at my own network.
+**Save.** Paste a URL and hit the wand, and it fetches the page and pulls out the
+title, description and preview image. The fetch streams and stops at `</head>`, caps
+at 5MB, times out at 8s, and caches 500 URLs for an hour. If it fails the bookmark
+still saves and I fill it in myself.
 
 **Organise.** One folder per bookmark, any number of tags. Tags can be created inline
 while saving. Favourite and archive are separate flags.
 
-**Find.** Fuzzy matching on `word_similarity()` by default, plus exact, contains,
-starts-with and loose modes. Any of them can target the title, description, URL, tag,
-folder, or everything at once. A separate filters page narrows by folder, tag and the
-two flags.
+**Find.** Five match modes — exact, contains, starts-with, fuzzy and loose. Fuzzy and
+loose are `word_similarity()` from `pg_trgm`, above a threshold of 0.7 and 0.5; the
+other three are `ILIKE`. Any of them can target the title, description, URL, tag,
+folder, or everything at once, and results come back rank-ordered with the matched
+runs highlighted. A separate filters page narrows by folder, tag and the two flags.
+
+<p align="center">
+  <img src="media/search.png" alt="Fuzzy search results for a misspelled query, with matches highlighted" width="100%">
+</p>
+
+The search box opens on exact; fuzzy is a click away on the mode row. Worth knowing
+because fuzzy is scored against the whole query string rather than word by word, so
+one word finds things a two-word phrase won't: `word_similarity('postgre', title)`
+scores 0.875 against my pg_trgm bookmark and clears the threshold, but
+`word_similarity('postgre trigram', title)` scores 0.500 against the same row and
+doesn't. Short queries are the ones fuzzy is good at.
 
 **Adjust.** Theme, bookmarks per page, which fields show on a card, card layout. The
 account tab handles password changes and account deletion.
@@ -44,7 +61,7 @@ Node 20.9+, pnpm and Docker. pnpm is pinned in `package.json`, so `corepack enab
 picks the right version.
 
 ```sh
-git clone https://gitea.15092021.xyz/pratik/saveit.git
+git clone https://github.com/pratiknkulkarni/saveit.git
 cd saveit
 cp .env.example .env
 ```
@@ -82,6 +99,7 @@ Three values matter:
   the Pi's address rather than `localhost`. Get it wrong and login fails without
   saying why.
 - `BETTER_AUTH_TRUSTED_URLS` — the same URL, comma-separated if there's more than one.
+  Set it, but don't lean on it; see "What isn't done".
 - `BETTER_AUTH_SECRET` and `POSTGRES_PASSWORD` — `openssl rand -hex 32` each. Changing
   the secret signs everyone out.
 
@@ -138,7 +156,33 @@ Postgres rather than a mock.
 
 ## What isn't done
 
-No backup job. Migrations are forward-only and nothing takes a `pg_dump` on a schedule.
+**The SSRF check is weaker than it looks.** `isUnsafeUrl` in
+`app/actions/metadatafetcher.ts` blocks `localhost` and hostnames that literally start
+with `127.`, `10.`, `192.168.` or `169.254.`. That is a string comparison on the
+hostname, not an address check, so it misses `172.16.0.0/12` — which is where Docker
+puts its bridges — along with IPv6, the decimal and hex spellings of an IPv4 address,
+and any DNS name that happens to resolve into private space. Redirects are followed
+three deep and not re-checked, so a public URL that 302s inward is fetched. Doing this
+properly means resolving the hostname and validating the resolved IP, on the original
+request and on every hop. Until then, this is a single-user app on a private network
+and I treat it as one. Don't expose it to strangers.
+
+**`BETTER_AUTH_TRUSTED_URLS` doesn't do anything yet.** `lib/auth.ts` passes
+`trustedOrigins` but never sets `baseURL`, so better-auth derives the base URL from
+each incoming request and trusts that request's own origin. A sign-in sent with
+`Origin: http://evil.example.com` comes back 200. Passing an explicit `baseURL` to
+`betterAuth()` is what makes the variable mean anything. Related: `next.config.ts`
+sends `Access-Control-Allow-Origin: *` alongside `Access-Control-Allow-Credentials:
+true` on `/api/*`, which browsers refuse to honour together — the pair should not be
+there either way.
+
+**A hydration mismatch on `/home`.** `components/Header.tsx` renders the avatar only
+once the client-side session exists, so the server sends the fallback and React
+throws the tree away on hydration. It costs a re-render and shows up as an error
+overlay in dev.
+
+**No backup job.** Migrations are forward-only and nothing takes a `pg_dump` on a
+schedule.
 
 ## How this was built
 
@@ -151,3 +195,9 @@ Postgres move and the search rewrite were February 2026. In August 2026 I used
 [Claude Code](https://claude.com/claude-code) for the part I'd been putting off: a
 proper standalone image, CI that builds and publishes to my own registry, test coverage
 over things I'd only ever checked by hand, and the account settings tab.
+
+---
+
+Developed on a self-hosted [Gitea](https://gitea.15092021.xyz/pratik/saveit) that runs in
+my homelab; the copy on GitHub is a read-only mirror of it, pushed on every commit.
+Issues and pull requests are welcome on the GitHub side and I will port them across.
